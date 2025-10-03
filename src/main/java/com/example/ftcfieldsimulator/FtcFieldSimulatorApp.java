@@ -8,6 +8,7 @@ import javafx.geometry.Insets;
 import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
@@ -54,6 +55,9 @@ public class FtcFieldSimulatorApp extends Application {
     private Thread udpListenerThread;
     private Label instructionLabel;
     private Stage primaryStage;
+    private PlotDisplayWindow plotDisplayWindow;
+    private UdpPlotListener udpPlotListener;
+    private Thread udpPlotListenerThread;
 
     // --- Path and Line Management ---
     private List<CurvePoint> currentPath = new ArrayList<>();
@@ -135,7 +139,8 @@ public class FtcFieldSimulatorApp extends Application {
         setupRecordingControlActions();
         setupParameterFieldListeners();
 
-        startUdpListener();
+        startUdpPositionListener();
+        startUdpPlotListener();
         primaryStage.setScene(scene);
         primaryStage.setResizable(true);
         primaryStage.show();
@@ -144,6 +149,42 @@ public class FtcFieldSimulatorApp extends Application {
         updateUIFromRobotState();
         updateControlPanelForPathState();
         updateTimeLapsedDisplay();
+    }
+
+    private void showPlotDisplay() {
+        if (plotDisplayWindow == null) {
+            plotDisplayWindow = new PlotDisplayWindow(primaryStage); // Pass primary stage as owner
+        }
+        plotDisplayWindow.show();
+    }
+    private void handleUdpPlotData(PlotDataEvent dataEvent) {
+        if (dataEvent == null) return;
+
+        Platform.runLater(() -> {
+            // Log all received plot data for now
+            // System.out.println("App received PlotDataEvent: " + dataEvent);
+
+            // If PlotDisplayWindow is not yet created, create it.
+            // This ensures if data comes before user clicks button, window can still be prepared.
+            // However, it won't show until user clicks.
+            if (plotDisplayWindow == null) {
+                // plotDisplayWindow = new PlotDisplayWindow(primaryStage); // Create but don't show
+                // Let's only interact if it's already created and showing by user action
+            }
+
+            if (plotDisplayWindow != null && plotDisplayWindow.isShowing()) {
+                PlotDisplay display = plotDisplayWindow.getPlotDisplay();
+                if (display != null) {
+                    // Pass the generic event. PlotDisplay will decide what to do.
+                    display.addPlotEvent(dataEvent);
+                }
+            } else if (dataEvent instanceof PlotYLimitsEvent || dataEvent instanceof PlotYUnitsEvent) {
+                // Optional: If plot window isn't visible, maybe still store these global settings
+                // so when it becomes visible, it uses the latest known ones.
+                // For now, we only update if visible.
+                System.out.println("Plot window not visible. Discarding: " + dataEvent);
+            }
+        });
     }
 
     private void setupControlPanelActions(Stage ownerStage) {
@@ -161,6 +202,7 @@ public class FtcFieldSimulatorApp extends Application {
             instructionLabel.setText("All custom lines cleared.");
         });
         controlPanel.setOnPointSelectionAction(this::handlePointSelectionChanged);
+        controlPanel.setOnShowPlotAction(event -> showPlotDisplay());
     }
 
     private void setupParameterFieldListeners() {
@@ -525,25 +567,6 @@ public class FtcFieldSimulatorApp extends Application {
         }
     }
 
-//    private void finishPathCreation(boolean cancelled) {
-//        if (!isCreatingPath) return;
-//        isCreatingPath = false;
-//        fieldDisplay.setPathCreationMode(false, null, null);
-//        if (cancelled) {
-//            currentPath.clear();
-//            instructionLabel.setText("Path creation cancelled. Click 'New Path' to start again.");
-//        } else {
-//            if (currentPath.isEmpty()) {
-//                instructionLabel.setText("Path finished with no points. Click 'New Path' to start again.");
-//            } else {
-//                instructionLabel.setText("Path finished with " + currentPath.size() + " points. Select points to edit parameters.");
-//            }
-//        }
-//        fieldDisplay.setPathToDraw(currentPath);
-//        fieldDisplay.drawCurrentState();
-//        updateControlPanelForPathState(); // This will enable point editing controls if path exists
-//    }
-
     private void handleFieldClickForPath(Point2D pixelCoords) {
         if (!isCreatingPath || controlPanel == null) return;
         Point2D inchesCoordsFieldCenter = fieldDisplay.pixelToInches(pixelCoords.getX(), pixelCoords.getY());
@@ -627,19 +650,6 @@ public class FtcFieldSimulatorApp extends Application {
         }
     }
 
-//    private void startNewPathCreation() {
-//        if (isCreatingPath) return;
-//        currentPath.clear();
-//        isCreatingPath = true; // Set before updating control panel
-//        updateControlPanelForPathState(); // Update UI: clears ComboBox, loads global defaults, disables editing
-//        controlPanel.setPathEditingActive(true); // Disables New, Delete, Export, Send buttons
-//
-//        instructionLabel.setText("Click the first waypoint. Parameters from global defaults will be used.");
-//        fieldDisplay.setPathCreationMode(true, this::handleFieldClickForPath, () -> finishPathCreation(false));
-//        fieldDisplay.setPathToDraw(currentPath);
-//        fieldDisplay.drawCurrentState();
-//    }
-
     // --- Recording, UDP, and Other Utility Methods (ensure these are complete from your original) ---
     private void setupRecordingControlActions() {
         controlPanel.setOnOpenAction(e -> handleOpenRecording());
@@ -700,14 +710,6 @@ public class FtcFieldSimulatorApp extends Application {
                 updateTimeLapsedDisplay();
             }
         });
-//        controlPanel.setOnSliderMouseReleased(event -> {
-//            if (recordingManager.getCurrentState() != RecordingManager.PlaybackState.PLAYING) {
-//                int seekIndex = (int) controlPanel.getTimelineSlider().getValue();
-//                recordingManager.seekTo(seekIndex);
-//                controlPanel.togglePlayPauseButtonIcon(false);
-//                updateTimeLapsedDisplay();
-//            }
-//        });
         controlPanel.setOnSliderMouseReleased(event -> {
             if (recordingManager.getCurrentState() != RecordingManager.PlaybackState.PLAYING &&
                     recordingManager.getCurrentState() != RecordingManager.PlaybackState.RECORDING) {
@@ -823,7 +825,7 @@ public class FtcFieldSimulatorApp extends Application {
         });
     }
 
-    private void startUdpListener() {
+    private void startUdpPositionListener() {
         try {
             udpListener = new UdpPositionListener(UDP_LISTENER_PORT, this::handleUdpMessage);
             udpListenerThread = new Thread(udpListener, "UdpListenerThread");
@@ -832,6 +834,23 @@ public class FtcFieldSimulatorApp extends Application {
             System.out.println("UDP Listener started on port " + UDP_LISTENER_PORT);
         } catch (Exception e) {
             instructionLabel.setText("ERROR: UDP Listener start failed on " + UDP_LISTENER_PORT);
+            e.printStackTrace();
+        }
+    }
+
+    private void startUdpPlotListener() {
+        try {
+            udpPlotListener = new UdpPlotListener(this::handleUdpPlotData); // Uses default port from UdpPlotListener
+            udpPlotListenerThread = new Thread(udpPlotListener, "UdpPlotListenerThread");
+            udpPlotListenerThread.setDaemon(true);
+            udpPlotListenerThread.start();
+            System.out.println("UDP Plot Listener started on port " + UdpPlotListener.DEFAULT_PLOT_LISTENER_PORT);
+        } catch (Exception e) {
+            // You might want a different label or way to show this error if instructionLabel is for field sim
+            System.err.println("ERROR: UDP Plot Listener start failed on " + UdpPlotListener.DEFAULT_PLOT_LISTENER_PORT + " - " + e.getMessage());
+            if (instructionLabel != null) { // Be cautious if this runs before instructionLabel is ready
+                instructionLabel.setText("ERROR: Plot Listener failed");
+            }
             e.printStackTrace();
         }
     }
@@ -847,12 +866,24 @@ public class FtcFieldSimulatorApp extends Application {
 
     private void stopApp() {
         if (udpListener != null) udpListener.stopListener();
+        if (udpPlotListener != null) udpPlotListener.stopListener();
+
         if (udpListenerThread != null && udpListenerThread.isAlive()) {
             try {
                 udpListenerThread.join(500);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
+        }
+        if (udpPlotListenerThread != null && udpPlotListenerThread.isAlive()) {
+            try {
+                udpPlotListenerThread.join(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        if (plotDisplayWindow != null && plotDisplayWindow.isShowing()){ // Close plot window if open
+            plotDisplayWindow.hide();
         }
         System.out.println("Exiting application.");
         Platform.exit();

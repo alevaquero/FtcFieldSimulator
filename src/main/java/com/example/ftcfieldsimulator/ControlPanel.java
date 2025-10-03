@@ -44,6 +44,7 @@ public class ControlPanel extends VBox {
     private Button openButton, saveButton;
     private ImageView recordIcon, stopIcon, playIcon, pauseIcon, reverseIcon, forwardIcon;
     private Slider timelineSlider;
+    private Button showPlotButton;
 
     // --- CurvePoint Parameter UI Elements ---
     private ComboBox<Object> pointSelectionComboBox; // +++ ADD: ComboBox for point selection
@@ -168,7 +169,6 @@ public class ControlPanel extends VBox {
         // +++ MODIFIED: Add ComboBox to this VBox +++
         VBox curveParamsBox = new VBox(8, paramsTitle, pointSelectionComboBox, paramsGrid);
 
-
         // --- Utility Controls Section ---
         // ... (Utility controls remain the same)
         Label utilityTitle = new Label("Utilities");
@@ -208,17 +208,15 @@ public class ControlPanel extends VBox {
 
         VBox recordingControlsBox = new VBox(8, recordingTitle, fileButtons, recordingButtons, timelineSlider, timeLapsedLabel);
 
+        // --- Tools Section ---
+//        Label toolsTitle = new Label("Tools & Views");
+//        toolsTitle.setFont(Font.font("Arial", FontWeight.BOLD, 16));
+        showPlotButton = createMaxWidthButton("Show Time Plot"); // Uses your existing helper
+//        VBox toolsControlsBox = new VBox(8, toolsTitle, showPlotButton);
+        VBox toolsControlsBox = new VBox(8, showPlotButton);
 
         // --- Robot Status Section ---
-        // ... (Status section remains the same)
-//        VBox spacer = new VBox();
-//        VBox.setVgrow(spacer, Priority.ALWAYS);
         Label statusTitle = new Label("Robot Status");
-//        statusTitle.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-//        statusTitle.setTextFill(Color.DARKSLATEBLUE);
-//        statusTitle.setMaxWidth(Double.MAX_VALUE);
-//        statusTitle.setAlignment(Pos.CENTER);
-//        statusTitle.setPadding(new Insets(10, 0, 5, 0));
         Font valueFont = Font.font("Consolas", 14);
         xPosLabel = createStatusLabel("X Position:", valueFont);
         yPosLabel = createStatusLabel("Y Position:", valueFont);
@@ -236,7 +234,7 @@ public class ControlPanel extends VBox {
         setPointEditingControlsDisabled(true); // ComboBox and parameter TextFields
         loadGlobalDefaultsIntoParameterFields(); // Load defaults into TextFields on startup
 
-        this.getChildren().addAll(pathControlsBox, curveParamsBox, utilityControlsBox, recordingControlsBox, statusInfoBox);
+        this.getChildren().addAll(pathControlsBox, curveParamsBox, utilityControlsBox, recordingControlsBox, toolsControlsBox, statusInfoBox);
     }
 
     private Button createMaxWidthButton(String text) {
@@ -310,6 +308,7 @@ public class ControlPanel extends VBox {
     public void setOnTimelineSliderChanged(ChangeListener<Number> listener) { timelineSlider.valueProperty().addListener(listener); }
     public void setOnSliderMouseReleased(EventHandler<MouseEvent> handler) { timelineSlider.setOnMouseReleased(handler); }
 
+    public void setOnShowPlotAction(EventHandler<ActionEvent> handler) { if (showPlotButton != null) { showPlotButton.setOnAction(handler); } }
 
     public void setPathEditingActive(boolean isActive) {
         newPathButton.setDisable(isActive);
@@ -502,321 +501,3 @@ public class ControlPanel extends VBox {
     public double getSlowDownTurnAmountParam() throws NumberFormatException { return Double.parseDouble(slowDownTurnAmountField.getText()); }
 }
 
-
-
-//package com.example.ftcfieldsimulator;
-//
-//import javafx.beans.value.ChangeListener;
-//import javafx.event.ActionEvent;
-//import javafx.event.EventHandler;
-//import javafx.geometry.Insets;
-//import javafx.geometry.Pos;
-//import javafx.scene.control.Button;
-//import javafx.scene.control.Label;
-//import javafx.scene.control.Slider;
-//import javafx.scene.layout.ColumnConstraints;
-//import javafx.scene.control.TextField;
-//import javafx.scene.image.Image;
-//import javafx.scene.image.ImageView;
-//import javafx.scene.input.MouseEvent;
-//import javafx.scene.layout.HBox;
-//import javafx.scene.layout.Priority;
-//import javafx.scene.layout.VBox;
-//import javafx.scene.layout.GridPane;
-//import javafx.scene.paint.Color;
-//import javafx.scene.text.Font;
-//import javafx.scene.text.FontWeight;
-//// +++ ADD: Import for Locale for consistent number formatting +++
-//import java.util.Locale;
-//
-//public class ControlPanel extends VBox {
-//    public static final double PREFERRED_WIDTH_RATIO_TO_FIELD = 1.0 / 3.0;
-//
-//    // --- UI Elements ---
-//    private Label xPosLabel, yPosLabel, headingLabel; // Removed pathStatusLabel as it wasn't used
-//    private Button newPathButton, deletePathButton, exportPathButton, clearTrailButton, clearNamedLinesButton;
-//    private Button sendPathButton;
-//    private Button recordButton, playPauseButton, reverseButton, forwardButton;
-//    private Button openButton, saveButton;
-//    private ImageView recordIcon, stopIcon, playIcon, pauseIcon, reverseIcon, forwardIcon;
-//    private Slider timelineSlider;
-//
-//    // +++ ADD: UI Elements for CurvePoint Parameters +++
-//    private TextField moveSpeedField;
-//    private TextField turnSpeedField;
-//    private TextField followDistanceField;
-//    private TextField pointLengthField;
-//    private TextField slowDownTurnDegreesField; // Input in degrees
-//    private TextField slowDownTurnAmountField;
-//
-//    // Default values for the fields
-//    // Using String.format with Locale.US to ensure dot as decimal separator for display
-//    private static final String DEFAULT_MOVE_SPEED = String.format(Locale.US, "%.1f", 0.4);
-//    private static final String DEFAULT_TURN_SPEED = String.format(Locale.US, "%.1f", 0.4);
-//    private static final String DEFAULT_FOLLOW_DISTANCE = String.format(Locale.US, "%.1f", 10.0);
-//    private static final String DEFAULT_POINT_LENGTH = String.format(Locale.US, "%.1f", 10.0);
-//    // For degrees, Math.toDegrees is used to convert the default radian value
-//    private static final String DEFAULT_SLOW_DOWN_TURN_DEGREES = String.format(Locale.US, "%.1f", Math.toDegrees(Math.toRadians(60))); // Default was toRadians(60), so convert back for display
-//    private static final String DEFAULT_SLOW_DOWN_TURN_AMOUNT = String.format(Locale.US, "%.1f", 0.6);
-//
-//
-//    public ControlPanel(double preferredWidth) {
-//        super(10); // Spacing for main VBox
-//        setPadding(new Insets(15));
-//        setPrefWidth(preferredWidth);
-//        setStyle("-fx-background-color: #ECEFF1;");
-//
-////        // --- Main Title ---
-////        Label controlsTitle = new Label("Controls");
-////        controlsTitle.setFont(Font.font("Arial", FontWeight.BOLD, 20));
-////        controlsTitle.setTextFill(Color.DARKSLATEBLUE);
-////        controlsTitle.setMaxWidth(Double.MAX_VALUE);
-////        controlsTitle.setAlignment(Pos.CENTER);
-////        controlsTitle.setPadding(new Insets(0, 0, 10, 0));
-//
-//        // --- Path Management Section ---
-//        Label pathTitle = new Label("Path Management");
-//        pathTitle.setFont(Font.font("Arial", FontWeight.BOLD, 16));
-//        newPathButton = createMaxWidthButton("New Path");
-//        deletePathButton = createMaxWidthButton("Delete Path");
-//        exportPathButton = createMaxWidthButton("Export Path (CSV)");
-//        sendPathButton = createMaxWidthButton("Send Path to Robot");
-//        sendPathButton.setDisable(true);
-//        VBox pathControlsBox = new VBox(8, pathTitle, newPathButton, deletePathButton, exportPathButton, sendPathButton);
-//
-//        // +++ ADD: CurvePoint Parameters Section +++
-//        Label paramsTitle = new Label("CurvePoint Parameters");
-//        paramsTitle.setFont(Font.font("Arial", FontWeight.BOLD, 16));
-//
-//        GridPane paramsGrid = new GridPane();
-//        paramsGrid.setHgap(10);
-//        paramsGrid.setVgap(8);
-//        paramsGrid.setPadding(new Insets(5, 0, 10, 0)); // Padding around the grid
-//
-//        // +++ MODIFIED: Define ColumnConstraints +++
-//        ColumnConstraints column1 = new ColumnConstraints();
-//        column1.setMinWidth(120); // Give labels a minimum width to prevent truncation
-//        // Adjust this value as needed based on your longest label.
-//        // You can also use setPrefWidth() if you want a fixed size.
-//
-//        ColumnConstraints column2 = new ColumnConstraints();
-//        column2.setHgrow(Priority.SOMETIMES); // Allow text field column to grow if needed, but not aggressively
-//
-//        paramsGrid.getColumnConstraints().addAll(column1, column2);
-//
-//        // +++ MODIFIED: Set a MaxWidth for TextFields +++
-//        double textFieldMaxWidth = 100; // Adjust this value to control TextField width
-//                                        // This aims for a narrower field. Experiment with this.
-//
-//        moveSpeedField = new TextField(DEFAULT_MOVE_SPEED);
-//        moveSpeedField.setMaxWidth(textFieldMaxWidth);
-//        turnSpeedField = new TextField(DEFAULT_TURN_SPEED);
-//        turnSpeedField.setMaxWidth(textFieldMaxWidth);
-//        followDistanceField = new TextField(DEFAULT_FOLLOW_DISTANCE);
-//        followDistanceField.setMaxWidth(textFieldMaxWidth);
-//        pointLengthField = new TextField(DEFAULT_POINT_LENGTH);
-//        pointLengthField.setMaxWidth(textFieldMaxWidth);
-//        slowDownTurnDegreesField = new TextField(DEFAULT_SLOW_DOWN_TURN_DEGREES);
-//        slowDownTurnDegreesField.setMaxWidth(textFieldMaxWidth);
-//        slowDownTurnAmountField = new TextField(DEFAULT_SLOW_DOWN_TURN_AMOUNT);
-//        slowDownTurnAmountField.setMaxWidth(textFieldMaxWidth);
-//
-////        moveSpeedField = new TextField(DEFAULT_MOVE_SPEED);
-////        turnSpeedField = new TextField(DEFAULT_TURN_SPEED);
-////        followDistanceField = new TextField(DEFAULT_FOLLOW_DISTANCE);
-////        pointLengthField = new TextField(DEFAULT_POINT_LENGTH);
-////        slowDownTurnDegreesField = new TextField(DEFAULT_SLOW_DOWN_TURN_DEGREES);
-////        slowDownTurnAmountField = new TextField(DEFAULT_SLOW_DOWN_TURN_AMOUNT);
-//
-//        paramsGrid.add(new Label("Move Speed:"), 0, 0);
-//        paramsGrid.add(moveSpeedField, 1, 0);
-//        paramsGrid.add(new Label("Turn Speed:"), 0, 1);
-//        paramsGrid.add(turnSpeedField, 1, 1);
-//        paramsGrid.add(new Label("Follow Distance:"), 0, 2);
-//        paramsGrid.add(followDistanceField, 1, 2);
-//        paramsGrid.add(new Label("Point Length:"), 0, 3);
-//        paramsGrid.add(pointLengthField, 1, 3);
-//        paramsGrid.add(new Label("Slow Turn (Deg):"), 0, 4); // Label indicates degrees
-//        paramsGrid.add(slowDownTurnDegreesField, 1, 4);
-//        paramsGrid.add(new Label("Slow Turn Amount:"), 0, 5);
-//        paramsGrid.add(slowDownTurnAmountField, 1, 5);
-//
-////        // Make TextFields in the grid expand
-////        GridPane.setHgrow(moveSpeedField, Priority.ALWAYS);
-////        GridPane.setHgrow(turnSpeedField, Priority.ALWAYS);
-////        GridPane.setHgrow(followDistanceField, Priority.ALWAYS);
-////        GridPane.setHgrow(pointLengthField, Priority.ALWAYS);
-////        GridPane.setHgrow(slowDownTurnDegreesField, Priority.ALWAYS);
-////        GridPane.setHgrow(slowDownTurnAmountField, Priority.ALWAYS);
-//
-//        VBox curveParamsBox = new VBox(8, paramsTitle, paramsGrid);
-//
-//
-//        // --- Utility Controls Section ---
-//        Label utilityTitle = new Label("Utilities");
-//        utilityTitle.setFont(Font.font("Arial", FontWeight.BOLD, 16));
-//        clearTrailButton = createMaxWidthButton("Clear Robot Trail");
-//        clearNamedLinesButton = createMaxWidthButton("Clear Custom Lines");
-//        VBox utilityControlsBox = new VBox(8, utilityTitle, clearTrailButton, clearNamedLinesButton);
-//
-//        // --- Recording Controls Section ---
-//        loadPlaybackIcons();
-//        Label recordingTitle = new Label("Recording");
-//        recordingTitle.setFont(Font.font("Arial", FontWeight.BOLD, 16));
-//        openButton = createMaxWidthButton("Open");
-//        saveButton = createMaxWidthButton("Save");
-//        saveButton.setDisable(true);
-//        HBox fileButtons = new HBox(10, openButton, saveButton);
-//        HBox.setHgrow(openButton, Priority.ALWAYS);
-//        HBox.setHgrow(saveButton, Priority.ALWAYS);
-//        recordButton = new Button();
-//        recordButton.setGraphic(recordIcon);
-//        playPauseButton = new Button();
-//        playPauseButton.setGraphic(playIcon);
-//        reverseButton = new Button();
-//        reverseButton.setGraphic(reverseIcon);
-//        forwardButton = new Button();
-//        forwardButton.setGraphic(forwardIcon);
-//        HBox recordingButtons = new HBox(10, reverseButton, playPauseButton, forwardButton, recordButton);
-//        recordingButtons.setAlignment(Pos.CENTER);
-//        timelineSlider = new Slider(0, 100, 0);
-//        timelineSlider.setDisable(true);
-//        VBox recordingControlsBox = new VBox(8, recordingTitle, fileButtons, recordingButtons, timelineSlider);
-//        setPlaybackControlsDisabled(true);
-//
-//        // --- Robot Status Section ---
-//        VBox spacer = new VBox();
-//        VBox.setVgrow(spacer, Priority.ALWAYS);
-//        Label statusTitle = new Label("Robot Status");
-//        statusTitle.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-//        statusTitle.setTextFill(Color.DARKSLATEBLUE);
-//        statusTitle.setMaxWidth(Double.MAX_VALUE);
-//        statusTitle.setAlignment(Pos.CENTER);
-//        statusTitle.setPadding(new Insets(10, 0, 5, 0));
-//        Font valueFont = Font.font("Consolas", 14);
-//        xPosLabel = createStatusLabel("X Position:", valueFont);
-//        yPosLabel = createStatusLabel("Y Position:", valueFont);
-//        headingLabel = createStatusLabel("Heading:", valueFont);
-//        VBox statusInfoBox = new VBox(5);
-//        statusInfoBox.setPadding(new Insets(5, 10, 10, 10));
-//        statusInfoBox.setStyle("-fx-border-color: #B0BEC5; -fx-border-width: 1; -fx-border-radius: 5;");
-//        statusInfoBox.getChildren().addAll(xPosLabel.getParent(), yPosLabel.getParent(), headingLabel.getParent());
-//
-//        // +++ MODIFIED: Add curveParamsBox to the layout +++
-//        this.getChildren().addAll(pathControlsBox, curveParamsBox, utilityControlsBox, recordingControlsBox, spacer, statusTitle, statusInfoBox);
-//    }
-//
-//    private Button createMaxWidthButton(String text) {
-//        Button button = new Button(text);
-//        button.setMaxWidth(Double.MAX_VALUE);
-//        return button;
-//    }
-//
-//    private Label createStatusLabel(String labelText, Font valueFont) {
-//        Label label = new Label(labelText);
-//        label.setStyle("-fx-text-fill: #37474F;");
-//        Label valueLabel = new Label("0.0");
-//        valueLabel.setFont(valueFont);
-//        valueLabel.setStyle("-fx-text-fill: #000000;");
-//        HBox hbox = new HBox(5, label, valueLabel);
-//        hbox.setAlignment(Pos.CENTER_LEFT);
-//        return valueLabel;
-//    }
-//
-//    private void loadPlaybackIcons() {
-//        double iconSize = 20;
-//        try {
-//            recordIcon = new ImageView(new Image(getClass().getResourceAsStream("/icons/record.png"), iconSize, iconSize, true, true));
-//            stopIcon = new ImageView(new Image(getClass().getResourceAsStream("/icons/stop.png"), iconSize, iconSize, true, true));
-//            playIcon = new ImageView(new Image(getClass().getResourceAsStream("/icons/play.png"), iconSize, iconSize, true, true));
-//            pauseIcon = new ImageView(new Image(getClass().getResourceAsStream("/icons/pause.png"), iconSize, iconSize, true, true));
-//            reverseIcon = new ImageView(new Image(getClass().getResourceAsStream("/icons/reverse.png"), iconSize, iconSize, true, true));
-//            forwardIcon = new ImageView(new Image(getClass().getResourceAsStream("/icons/forward.png"), iconSize, iconSize, true, true));
-//        } catch (Exception e) {
-//            System.err.println("Error loading playback icons: " + e.getMessage());
-//        }
-//    }
-//
-//    // --- PUBLIC METHODS ---
-//
-//    public void setOnOpenAction(EventHandler<ActionEvent> handler) { openButton.setOnAction(handler); }
-//    public void setOnSaveAction(EventHandler<ActionEvent> handler) { saveButton.setOnAction(handler); }
-//    public void setSaveButtonDisabled(boolean isDisabled) { saveButton.setDisable(isDisabled); }
-//
-//    public void updateRobotStatus(double x, double y, double h) { xPosLabel.setText(String.format(Locale.US, "%.2f", x)); yPosLabel.setText(String.format(Locale.US, "%.2f", y)); headingLabel.setText(String.format(Locale.US, "%.2f°", h)); }
-//    public void setOnNewPathAction(EventHandler<ActionEvent> handler) { newPathButton.setOnAction(handler); }
-//    public void setOnDeletePathAction(EventHandler<ActionEvent> handler) { deletePathButton.setOnAction(handler); }
-//    public void setOnExportPathAction(EventHandler<ActionEvent> handler) { exportPathButton.setOnAction(handler); }
-//    public void setOnSendPathAction(EventHandler<ActionEvent> handler) { if (sendPathButton != null) { sendPathButton.setOnAction(handler); } }
-//    public void setOnClearTrailAction(EventHandler<ActionEvent> handler) { clearTrailButton.setOnAction(handler); }
-//    public void setOnClearNamedLinesAction(EventHandler<ActionEvent> handler) { clearNamedLinesButton.setOnAction(handler); }
-//    public void setOnRecordAction(Runnable action) { recordButton.setOnAction(e -> action.run()); }
-//    public void setOnPlayPauseAction(Runnable action) { playPauseButton.setOnAction(e -> action.run()); }
-//    public void setOnTimelineSliderChanged(ChangeListener<Number> listener) { timelineSlider.valueProperty().addListener(listener); }
-//    public void setOnSliderMouseReleased(EventHandler<MouseEvent> handler) { timelineSlider.setOnMouseReleased(handler); }
-//
-//    public void setPathEditingActive(boolean isActive) {
-//        newPathButton.setDisable(isActive);
-//        deletePathButton.setDisable(isActive);
-//        exportPathButton.setDisable(isActive);
-//        if (sendPathButton != null) {
-//            sendPathButton.setDisable(isActive);
-//        }
-//    }
-//
-//    public void updateTimelineSlider(int currentEventIndex, int totalEvents) { if (totalEvents > 1) { timelineSlider.setMax(totalEvents - 1); timelineSlider.setValue(currentEventIndex); } else { timelineSlider.setMax(100); timelineSlider.setValue(0); } }
-//    public void setTimelineSliderDisabled(boolean isDisabled) { timelineSlider.setDisable(isDisabled); }
-//    public void toggleRecordButtonIcon(boolean isRecording) { recordButton.setGraphic(isRecording ? stopIcon : recordIcon); }
-//    public void togglePlayPauseButtonIcon(boolean isPlaying) { playPauseButton.setGraphic(isPlaying ? pauseIcon : playIcon); }
-//    public void setPlaybackControlsDisabled(boolean isDisabled) { playPauseButton.setDisable(isDisabled); reverseButton.setDisable(isDisabled); forwardButton.setDisable(isDisabled); }
-//
-//    public void enablePathControls(boolean pathExists) {
-//        deletePathButton.setDisable(!pathExists);
-//        exportPathButton.setDisable(!pathExists);
-//        if (sendPathButton != null) {
-//            sendPathButton.setDisable(!pathExists);
-//        }
-//    }
-//
-//    public Slider getTimelineSlider() { return this.timelineSlider; }
-//    public Button getForwardButton() { return this.forwardButton; }
-//    public Button getReverseButton() { return this.reverseButton; }
-//    public void setOnForwardAction(Runnable action) { if (forwardButton != null) { forwardButton.setOnAction(e -> action.run()); } }
-//    public void setOnReverseAction(Runnable action) { if (reverseButton != null) { reverseButton.setOnAction(e -> action.run()); } }
-//
-//    // +++ ADD: Getter methods for CurvePoint Parameters +++
-//    // These methods throw NumberFormatException if parsing fails,
-//    // which should be caught by the caller (FtcFieldSimulatorApp).
-//
-//    public double getMoveSpeedParam() throws NumberFormatException {
-//        return Double.parseDouble(moveSpeedField.getText());
-//    }
-//
-//    public double getTurnSpeedParam() throws NumberFormatException {
-//        return Double.parseDouble(turnSpeedField.getText());
-//    }
-//
-//    public double getFollowDistanceParam() throws NumberFormatException {
-//        return Double.parseDouble(followDistanceField.getText());
-//    }
-//
-//    public double getPointLengthParam() throws NumberFormatException {
-//        return Double.parseDouble(pointLengthField.getText());
-//    }
-//
-//    /**
-//     * Gets the slow down turn angle in DEGREES from the TextField.
-//     * The caller is responsible for converting to radians if needed.
-//     * @return The angle in degrees.
-//     * @throws NumberFormatException if the text is not a valid double.
-//     */
-//    public double getSlowDownTurnDegreesParam() throws NumberFormatException {
-//        return Double.parseDouble(slowDownTurnDegreesField.getText());
-//    }
-//
-//    public double getSlowDownTurnAmountParam() throws NumberFormatException {
-//        return Double.parseDouble(slowDownTurnAmountField.getText());
-//    }
-//}
-//
-//
