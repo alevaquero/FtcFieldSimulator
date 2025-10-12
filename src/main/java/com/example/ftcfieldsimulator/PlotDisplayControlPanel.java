@@ -28,6 +28,8 @@ public class PlotDisplayControlPanel extends VBox {
     private Button btnClearPlot;
     private Button btnStretchTime; // Zoom In on Time
     private Button btnShrinkTime;  // Zoom Out on Time
+    private Button btnSave;        // Save Button
+    private Button btnLoad;        // Load Button
     private CheckBox chkFollowRealTime;
     private Label lblKeyValueTitle;
     private TableView<KeyTableEntry> keyValueTable;
@@ -58,6 +60,8 @@ public class PlotDisplayControlPanel extends VBox {
         public void setValue(String value) { this.value.set(value); }
     }
 
+    // In PlotDisplayControlPanel.java
+
     public PlotDisplayControlPanel() {
         super(10); // Spacing for VBox
         setPadding(new Insets(10));
@@ -72,47 +76,256 @@ public class PlotDisplayControlPanel extends VBox {
         btnClearPlot = new Button("Clear Plot");
         btnClearPlot.setMaxWidth(Double.MAX_VALUE);
 
-        btnStretchTime = new Button("Stretch Time (+)");
-        btnStretchTime.setMaxWidth(Double.MAX_VALUE);
+        // --- Create and Initialize Save and Load Buttons ---
+        btnSave = new Button("Save Data");
+        btnLoad = new Button("Load Data");
 
+        // This HBox was likely the missing piece, causing the NullPointerException
+        HBox fileButtonsBox = new HBox(5, btnSave, btnLoad);
+        fileButtonsBox.setAlignment(Pos.CENTER);
+        HBox.setHgrow(btnSave, Priority.ALWAYS);
+        HBox.setHgrow(btnLoad, Priority.ALWAYS);
+        btnSave.setMaxWidth(Double.MAX_VALUE);
+        btnLoad.setMaxWidth(Double.MAX_VALUE);
+        // --- End of Save/Load setup ---
+
+        btnStretchTime = new Button("Stretch Time (+)");
         btnShrinkTime = new Button("Shrink Time (-)");
+
+        HBox timeButtonsBox = new HBox(5, btnStretchTime, btnShrinkTime);
+        timeButtonsBox.setAlignment(Pos.CENTER);
+        HBox.setHgrow(btnStretchTime, Priority.ALWAYS);
+        HBox.setHgrow(btnShrinkTime, Priority.ALWAYS);
+        btnStretchTime.setMaxWidth(Double.MAX_VALUE);
         btnShrinkTime.setMaxWidth(Double.MAX_VALUE);
 
         chkFollowRealTime = new CheckBox("Follow Real-Time");
-        chkFollowRealTime.setSelected(true); // Default to enabled
-        chkFollowRealTime.setMaxWidth(Double.MAX_VALUE); // Make it take full width like buttons
+        chkFollowRealTime.setSelected(true);
+        chkFollowRealTime.setMaxWidth(Double.MAX_VALUE);
 
         lblKeyValueTitle = new Label("Key-Value Data");
         lblKeyValueTitle.setFont(Font.font("Arial", FontWeight.BOLD, 13));
-        lblKeyValueTitle.setPadding(new Insets(15, 0, 5, 0)); // Add some top margin
+        lblKeyValueTitle.setPadding(new Insets(15, 0, 5, 0));
 
+        // --- TableView setup (remains the same) ---
         keyValueTable = new TableView<>();
         TableColumn<KeyTableEntry, String> timeCol = new TableColumn<>("Time (s)");
         timeCol.setCellValueFactory(new PropertyValueFactory<>("time"));
-        timeCol.setPrefWidth(70); // Adjust as needed
+        timeCol.setPrefWidth(70);
 
         TableColumn<KeyTableEntry, String> keyCol = new TableColumn<>("Key");
         keyCol.setCellValueFactory(new PropertyValueFactory<>("key"));
-        keyCol.setPrefWidth(80); // Adjust as needed
+        keyCol.setPrefWidth(80);
 
         TableColumn<KeyTableEntry, String> valueCol = new TableColumn<>("Value");
         valueCol.setCellValueFactory(new PropertyValueFactory<>("value"));
-//        valueCol.setPrefWidth(80); // Adjust as needed
         valueCol.prefWidthProperty().bind(
                 keyValueTable.widthProperty()
                         .subtract(timeCol.widthProperty())
                         .subtract(keyCol.widthProperty())
-                        .subtract(2) // Account for table borders/internal padding slightly
+                        .subtract(2)
         );
 
         keyValueTable.getColumns().addAll(timeCol, keyCol, valueCol);
         keyValueTable.setItems(keyValueTableData);
         keyValueTable.setPlaceholder(new Label("No key-value data yet"));
-        VBox.setVgrow(keyValueTable, Priority.ALWAYS); // Allow table to take vertical space
-        keyValueTable.setPrefHeight(200); // Or some initial preferred height
+        VBox.setVgrow(keyValueTable, Priority.ALWAYS);
+        keyValueTable.setPrefHeight(200);
 
-        getChildren().addAll(title, btnClearPlot, btnStretchTime, btnShrinkTime, chkFollowRealTime, lblKeyValueTitle, keyValueTable);
+        // --- Correctly add all initialized components ---
+        getChildren().addAll(title, btnClearPlot, fileButtonsBox, timeButtonsBox, chkFollowRealTime, lblKeyValueTitle, keyValueTable);
     }
+
+// --- You will also need these methods for the wiring to work ---
+
+//    public void setOnSaveAction(EventHandler<ActionEvent> handler) {
+//        btnSave.setOnAction(handler);
+//    }
+//
+//    public void setOnLoadAction(EventHandler<ActionEvent> handler) {
+//        btnLoad.setOnAction(handler);
+//    }
+
+//    public PlotDisplayControlPanel() {
+//        super(10); // Spacing for VBox
+//        setPadding(new Insets(10));
+//        setPrefWidth(300); // Consistent width
+//        setStyle("-fx-background-color: #ECEFF1;");
+//        setAlignment(Pos.TOP_CENTER);
+//
+//        Label title = new Label("Plot Controls");
+//        title.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+//        title.setPadding(new Insets(0,0,10,0));
+//
+//        btnClearPlot = new Button("Clear Plot");
+//        btnClearPlot.setMaxWidth(Double.MAX_VALUE);
+//
+//        // --- NEW: Save and Load Buttons ---
+//        btnSave = new Button("Save Data");
+//        btnLoad = new Button("Load Data");
+//        HBox fileButtonsBox = new HBox(5, btnSave, btnLoad);
+//        fileButtonsBox.setAlignment(Pos.CENTER);
+//        HBox.setHgrow(btnSave, Priority.ALWAYS);
+//        HBox.setHgrow(btnLoad, Priority.ALWAYS);
+//        btnSave.setMaxWidth(Double.MAX_VALUE);
+//        btnLoad.setMaxWidth(Double.MAX_VALUE);
+//        // --- End of new buttons ---
+//
+//        btnStretchTime = new Button("Stretch Time (+)");
+//        btnShrinkTime = new Button("Shrink Time (-)");
+//
+//        HBox timeButtonsBox = new HBox(5, btnStretchTime, btnShrinkTime); // 5px spacing
+//        timeButtonsBox.setAlignment(Pos.CENTER);
+//        HBox.setHgrow(btnStretchTime, Priority.ALWAYS);
+//        HBox.setHgrow(btnShrinkTime, Priority.ALWAYS);
+//        btnStretchTime.setMaxWidth(Double.MAX_VALUE);
+//        btnShrinkTime.setMaxWidth(Double.MAX_VALUE);
+//
+//        chkFollowRealTime = new CheckBox("Follow Real-Time");
+//        chkFollowRealTime.setSelected(true);
+//        chkFollowRealTime.setMaxWidth(Double.MAX_VALUE);
+//
+//        lblKeyValueTitle = new Label("Key-Value Data");
+//        // ... (rest of the TableView setup is unchanged)
+//        // ...
+//
+//        // --- MODIFIED: Add the new fileButtonsBox ---
+//        getChildren().addAll(title, btnClearPlot, fileButtonsBox, timeButtonsBox, chkFollowRealTime, lblKeyValueTitle, keyValueTable);
+//    }
+
+    // ... (existing updateKeyValueTable and other methods) ...
+
+    // --- NEW: Add setters for the new button actions ---
+    public void setOnSaveAction(EventHandler<ActionEvent> handler) {
+        btnSave.setOnAction(handler);
+    }
+
+    public void setOnLoadAction(EventHandler<ActionEvent> handler) {
+        btnLoad.setOnAction(handler);
+    }
+
+//    public PlotDisplayControlPanel() {
+//        super(10); // Spacing for VBox
+//        setPadding(new Insets(10));
+//        setPrefWidth(300); // Consistent width
+//        setStyle("-fx-background-color: #ECEFF1;");
+//        setAlignment(Pos.TOP_CENTER);
+//
+//        Label title = new Label("Plot Controls");
+//        title.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+//        title.setPadding(new Insets(0,0,10,0));
+//
+//        btnClearPlot = new Button("Clear Plot");
+//        btnClearPlot.setMaxWidth(Double.MAX_VALUE);
+//
+//        btnStretchTime = new Button("Stretch Time (+)");
+//        // btnStretchTime.setMaxWidth(Double.MAX_VALUE); // Let HBox manage width
+//
+//        btnShrinkTime = new Button("Shrink Time (-)");
+//        // btnShrinkTime.setMaxWidth(Double.MAX_VALUE); // Let HBox manage width
+//
+//        // --- NEW: Create an HBox for the time control buttons ---
+//        HBox timeButtonsBox = new HBox(5, btnStretchTime, btnShrinkTime); // 5px spacing
+//        timeButtonsBox.setAlignment(Pos.CENTER); // Center buttons within the HBox
+//        // Make the buttons grow to fill the HBox width equally
+//        HBox.setHgrow(btnStretchTime, Priority.ALWAYS);
+//        HBox.setHgrow(btnShrinkTime, Priority.ALWAYS);
+//        // Ensure buttons are at least their preferred width but can grow
+//        btnStretchTime.setMaxWidth(Double.MAX_VALUE);
+//        btnShrinkTime.setMaxWidth(Double.MAX_VALUE);
+//        // --- End of new HBox setup ---
+//
+//        chkFollowRealTime = new CheckBox("Follow Real-Time");
+//        chkFollowRealTime.setSelected(true); // Default to enabled
+//        chkFollowRealTime.setMaxWidth(Double.MAX_VALUE); // Make it take full width like buttons
+//
+//        lblKeyValueTitle = new Label("Key-Value Data");
+//        lblKeyValueTitle.setFont(Font.font("Arial", FontWeight.BOLD, 13));
+//        lblKeyValueTitle.setPadding(new Insets(15, 0, 5, 0)); // Add some top margin
+//
+//        keyValueTable = new TableView<>();
+//        TableColumn<KeyTableEntry, String> timeCol = new TableColumn<>("Time (s)");
+//        timeCol.setCellValueFactory(new PropertyValueFactory<>("time"));
+//        timeCol.setPrefWidth(70);
+//
+//        TableColumn<KeyTableEntry, String> keyCol = new TableColumn<>("Key");
+//        keyCol.setCellValueFactory(new PropertyValueFactory<>("key"));
+//        keyCol.setPrefWidth(80);
+//
+//        TableColumn<KeyTableEntry, String> valueCol = new TableColumn<>("Value");
+//        valueCol.setCellValueFactory(new PropertyValueFactory<>("value"));
+//        valueCol.prefWidthProperty().bind(
+//                keyValueTable.widthProperty()
+//                        .subtract(timeCol.widthProperty())
+//                        .subtract(keyCol.widthProperty())
+//                        .subtract(2)
+//        );
+//
+//        keyValueTable.getColumns().addAll(timeCol, keyCol, valueCol);
+//        keyValueTable.setItems(keyValueTableData);
+//        keyValueTable.setPlaceholder(new Label("No key-value data yet"));
+//        VBox.setVgrow(keyValueTable, Priority.ALWAYS);
+//        keyValueTable.setPrefHeight(200);
+//
+//        // --- MODIFIED: Add the HBox instead of the individual buttons ---
+//        getChildren().addAll(title, btnClearPlot, timeButtonsBox, chkFollowRealTime, lblKeyValueTitle, keyValueTable);
+//    }
+
+//    public PlotDisplayControlPanel() {
+//        super(10); // Spacing for VBox
+//        setPadding(new Insets(10));
+//        setPrefWidth(300); // Consistent width
+//        setStyle("-fx-background-color: #ECEFF1;");
+//        setAlignment(Pos.TOP_CENTER);
+//
+//        Label title = new Label("Plot Controls");
+//        title.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+//        title.setPadding(new Insets(0,0,10,0));
+//
+//        btnClearPlot = new Button("Clear Plot");
+//        btnClearPlot.setMaxWidth(Double.MAX_VALUE);
+//
+//        btnStretchTime = new Button("Stretch Time (+)");
+//        btnStretchTime.setMaxWidth(Double.MAX_VALUE);
+//
+//        btnShrinkTime = new Button("Shrink Time (-)");
+//        btnShrinkTime.setMaxWidth(Double.MAX_VALUE);
+//
+//        chkFollowRealTime = new CheckBox("Follow Real-Time");
+//        chkFollowRealTime.setSelected(true); // Default to enabled
+//        chkFollowRealTime.setMaxWidth(Double.MAX_VALUE); // Make it take full width like buttons
+//
+//        lblKeyValueTitle = new Label("Key-Value Data");
+//        lblKeyValueTitle.setFont(Font.font("Arial", FontWeight.BOLD, 13));
+//        lblKeyValueTitle.setPadding(new Insets(15, 0, 5, 0)); // Add some top margin
+//
+//        keyValueTable = new TableView<>();
+//        TableColumn<KeyTableEntry, String> timeCol = new TableColumn<>("Time (s)");
+//        timeCol.setCellValueFactory(new PropertyValueFactory<>("time"));
+//        timeCol.setPrefWidth(70); // Adjust as needed
+//
+//        TableColumn<KeyTableEntry, String> keyCol = new TableColumn<>("Key");
+//        keyCol.setCellValueFactory(new PropertyValueFactory<>("key"));
+//        keyCol.setPrefWidth(80); // Adjust as needed
+//
+//        TableColumn<KeyTableEntry, String> valueCol = new TableColumn<>("Value");
+//        valueCol.setCellValueFactory(new PropertyValueFactory<>("value"));
+////        valueCol.setPrefWidth(80); // Adjust as needed
+//        valueCol.prefWidthProperty().bind(
+//                keyValueTable.widthProperty()
+//                        .subtract(timeCol.widthProperty())
+//                        .subtract(keyCol.widthProperty())
+//                        .subtract(2) // Account for table borders/internal padding slightly
+//        );
+//
+//        keyValueTable.getColumns().addAll(timeCol, keyCol, valueCol);
+//        keyValueTable.setItems(keyValueTableData);
+//        keyValueTable.setPlaceholder(new Label("No key-value data yet"));
+//        VBox.setVgrow(keyValueTable, Priority.ALWAYS); // Allow table to take vertical space
+//        keyValueTable.setPrefHeight(200); // Or some initial preferred height
+//
+//        getChildren().addAll(title, btnClearPlot, btnStretchTime, btnShrinkTime, chkFollowRealTime, lblKeyValueTitle, keyValueTable);
+//    }
 
     public void updateKeyValueTable(List<KeyTableEntry> entries) {
         keyValueTableData.setAll(entries); // Efficiently updates the table

@@ -10,7 +10,8 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import javafx.stage.Modality;
 import javafx.stage.Window;
-
+import javafx.stage.FileChooser; // Add this import
+import java.io.File; // Add this import
 
 public class PlotDisplayWindow {
 
@@ -51,6 +52,38 @@ public class PlotDisplayWindow {
         plotControlPanel.setOnFollowRealTimeAction(e -> {
             if (plotDisplay != null) {
                 plotDisplay.setAutoScrollEnabled(plotControlPanel.isFollowRealTimeSelected());
+            }
+        });
+
+        plotControlPanel.setOnSaveAction(e -> {
+            if (plotDisplay == null) return;
+
+            FileChooser fileChooser = new FileChooser();
+            fileChooser.setTitle("Save Plot Data");
+            fileChooser.getExtensionFilters().addAll(
+                    new FileChooser.ExtensionFilter("Plot Data Files", "*.pdat"),
+                    new FileChooser.ExtensionFilter("Text Files", "*.txt"),
+                    new FileChooser.ExtensionFilter("All Files", "*.*")
+            );
+            File file = fileChooser.showSaveDialog(plotStage);
+            if (file != null) {
+                plotDisplay.savePlotData(file);
+            }
+        });
+
+        plotControlPanel.setOnLoadAction(e -> {
+            if (plotDisplay == null) return;
+
+            FileChooser fileChooser = new FileChooser();
+            fileChooser.setTitle("Load Plot Data");
+            fileChooser.getExtensionFilters().addAll(
+                    new FileChooser.ExtensionFilter("Plot Data Files", "*.pdat"),
+                    new FileChooser.ExtensionFilter("Text Files", "*.txt"),
+                    new FileChooser.ExtensionFilter("All Files", "*.*")
+            );
+            File file = fileChooser.showOpenDialog(plotStage);
+            if (file != null) {
+                plotDisplay.loadPlotData(file);
             }
         });
 

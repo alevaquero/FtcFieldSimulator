@@ -8,6 +8,7 @@ import javafx.beans.value.ChangeListener;
 import javafx.geometry.Orientation;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.control.Label;
 import javafx.scene.control.ScrollBar;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.shape.StrokeLineCap; // For cursor line style
@@ -15,9 +16,11 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane; // for layering scrollbar and Y-axis
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
+import javafx.scene.text.FontWeight;
 import javafx.scene.text.TextAlignment;
 // No need for Affine/Rotate directly here for Task 4, gc.save/restore is enough for text rotation
 
+//import java.lang.classfile.Label;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -32,6 +35,22 @@ import java.util.TreeSet; // For managing readout vertical positions
 import java.util.Set;     // For active styles
 import java.text.DecimalFormat; // For formatting readout values
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
 
 public class PlotDisplay extends Pane { // Will now act as a container for Canvas, Y-axis Canvas, Scrollbar
 
@@ -49,6 +68,14 @@ public class PlotDisplay extends Pane { // Will now act as a container for Canva
 
     private static final double SCROLLBAR_HEIGHT = 20;
 
+    private final Map<Integer, Label> styleToReadoutLabel = new HashMap<>();
+//    private static final String READOUT_LABEL_STYLE = "-fx-background-color: rgba(40, 40, 40, 0.7); -fx-padding: 2px 4px; -fx-border-radius: 3px; -fx-background-radius: 3px;";
+    private static final String READOUT_LABEL_STYLE = "-fx-padding: 2px 4px; -fx-border-radius: 3px; -fx-background-radius: 3px;";
+    private static final Font READOUT_LABEL_FONT = Font.font("Arial", 10);
+    // +++ Labels for Cursor Coordinates +++
+    private Label cursorXLabel;
+    private Label cursorYLabel;
+
     private Canvas mainGraphCanvas; // Canvas for the scrolling graph (grid_x, data, x-labels)
     private GraphicsContext mainGc;
     private Canvas yAxisCanvas;     // Fixed canvas for Y-axis and its grid lines
@@ -63,6 +90,9 @@ public class PlotDisplay extends Pane { // Will now act as a container for Canva
     // --- Data Storage & State ---
     private final List<PlotDataEvent> plotEvents = new ArrayList<>();
     private static final int MAX_PLOT_EVENTS = 100000;
+
+    // If the gap between incoming data points is > 15 seconds, clear the plot and start fresh.
+    private static final long MAX_TIME_GAP_MS = 15000;
 
     private double currentMinY = 0.0;
     private double currentMaxY = 100.0;
@@ -109,6 +139,7 @@ public class PlotDisplay extends Pane { // Will now act as a container for Canva
     // +++ Mouse Cursor State +++
     private boolean isMouseInPlotArea = false;
     private double mousePlotX = -1; // X coordinate on mainGraphCanvas
+    private double mousePlotY = -1; // Y coordinate on mainGraphCanvas
     private long currentCursorTimeMs = -1; // Timestamp corresponding to mouse position
     private static final Color CURSOR_LINE_COLOR = Color.rgb(255, 140, 0); // Dark Orange (was Color.YELLOW)
     private static final Color[] POINT_COLORS = { /* ... same as before ... */
@@ -238,7 +269,37 @@ public class PlotDisplay extends Pane { // Will now act as a container for Canva
         // Ensure coordinates are correctly translated if using graphContainer.
         // For simplicity, starting with mainGraphCanvas.
 
+        // +++ Initialize Cursor Coordinate Labels +++
+        String cursorLabelStyle = "-fx-padding: 2px 4px; -fx-border-radius: 3px; -fx-background-radius: 3px; -fx-background-color: " + toRgbCode(CURSOR_LINE_COLOR) + ";";
+        Font cursorLabelFont = Font.font("Arial", 10);
+
+        cursorXLabel = new Label();
+        cursorXLabel.setFont(cursorLabelFont);
+        cursorXLabel.setStyle(cursorLabelStyle);
+        cursorXLabel.setTextFill(Color.WHITE);
+        cursorXLabel.setMouseTransparent(true);
+        cursorXLabel.setVisible(false);
+
+        cursorYLabel = new Label();
+        cursorYLabel.setFont(cursorLabelFont);
+        cursorYLabel.setStyle(cursorLabelStyle);
+        cursorYLabel.setTextFill(Color.WHITE);
+        cursorYLabel.setMouseTransparent(true);
+        cursorYLabel.setVisible(false);
+
+        getChildren().addAll(cursorXLabel, cursorYLabel);
+
         redrawFullPlot();
+    }
+
+    /**
+     * Converts a JavaFX Color to a CSS-compatible rgb() string.
+     */
+    private String toRgbCode(Color color) {
+        return String.format("rgb(%d, %d, %d)",
+                (int) (color.getRed() * 255),
+                (int) (color.getGreen() * 255),
+                (int) (color.getBlue() * 255));
     }
 
     public void setControlPanelProxy(PlotDisplayControlPanel panel) {
@@ -277,6 +338,7 @@ public class PlotDisplay extends Pane { // Will now act as a container for Canva
         isMouseInPlotArea = true;
         // event.getX() is relative to mainGraphCanvas's top-left corner (0,0 of its potentially wider area)
         mousePlotX = event.getX();
+        mousePlotY = event.getY();
 
         if (pixelsPerMillisecond > 0 && firstTimestamp != -1) {
             // currentScrollOffsetMs is time at the *visible* left edge of mainGraphCanvas
@@ -298,6 +360,7 @@ public class PlotDisplay extends Pane { // Will now act as a container for Canva
         isMouseInPlotArea = false;
         currentCursorTimeMs = -1; // Invalidate cursor time
         mousePlotX = -1;
+        mousePlotY = -1;
 
         refreshKeyValueTable(); // Revert KV table to "latest" values
 
@@ -466,22 +529,41 @@ public class PlotDisplay extends Pane { // Will now act as a container for Canva
     public void addPlotEvent(PlotDataEvent event) {
         if (event == null) return;
 
-        boolean updateKeyValueTableNeeded = false; // Flag to update KV table
+        // --- REFINED: Detect and handle large time gaps ---
+        if (lastTimestamp != -1 && (event.getTimestamp() - lastTimestamp > MAX_TIME_GAP_MS)) {
+            // The time gap is too large. Clear the plot to start a new "session".
+            Platform.runLater(() -> {
+                clearPlot();
+                // After clearing, we need to re-process this event as the *first* event
+                // of the new session.
+                processNewEvent(event);
+            });
+            return; // Stop processing this event in the current (background) thread.
+        }
+
+        Platform.runLater(() -> processNewEvent(event));
+    }
+
+    /**
+     * Helper method to process a new event on the JavaFX Application Thread.
+     * This contains the original logic of addPlotEvent.
+     * @param event The event to add to the plot.
+     */
+    private void processNewEvent(PlotDataEvent event) {
+        boolean updateKeyValueTableNeeded = false;
 
         boolean isFirstEvent = (firstTimestamp == -1);
         if (isFirstEvent) {
             firstTimestamp = event.getTimestamp();
         }
-        // Update lastTimestamp regardless
+
         if (lastTimestamp == -1 || event.getTimestamp() > lastTimestamp) {
             lastTimestamp = event.getTimestamp();
         }
 
         synchronized (plotEvents) {
-            if (!(event instanceof PlotKeyValueEvent)) { // Don't add KV events to the main graph events
+            if (!(event instanceof PlotKeyValueEvent)) {
                 if (plotEvents.size() >= MAX_PLOT_EVENTS) {
-                    // If removing, need to check if firstTimestamp needs update (complex, handle later if necessary)
-                    // For now, simple removal from start. This could make plot jump if firstTimestamp changes.
                     PlotDataEvent removed = plotEvents.remove(0);
                     if (firstTimestamp == removed.getTimestamp() && !plotEvents.isEmpty()) {
                         firstTimestamp = plotEvents.get(0).getTimestamp();
@@ -497,34 +579,95 @@ public class PlotDisplay extends Pane { // Will now act as a container for Canva
                 PlotKeyValueEvent kvEvent = (PlotKeyValueEvent) event;
                 keyValueStore.computeIfAbsent(kvEvent.getKey(), k -> new ArrayList<>())
                         .add(new TimestampedStringValue(kvEvent.getTimestamp(), kvEvent.getValue()));
-                // Sort the list for this key after adding (important for finding value at cursor)
-                keyValueStore.get(kvEvent.getKey()).sort(null); // Natural sort by timestamp
+                keyValueStore.get(kvEvent.getKey()).sort(null);
                 updateKeyValueTableNeeded = true;
             } else if (event instanceof PlotYLimitsEvent) {
-                PlotYLimitsEvent yle = (PlotYLimitsEvent) event;
-                setYLimits(yle.getMinY(), yle.getMaxY()); // Will redraw all
-                // No return here, allow auto-scroll to potentially happen if enabled
+                setYLimits(((PlotYLimitsEvent) event).getMinY(), ((PlotYLimitsEvent) event).getMaxY());
             } else if (event instanceof PlotYUnitsEvent) {
-                PlotYUnitsEvent yue = (PlotYUnitsEvent) event;
-                setYUnit(yue.getUnit()); // Will redraw Y-axis
-                return; // Y-units change doesn't affect scroll or main graph data positions
+                setYUnit(((PlotYUnitsEvent) event).getUnit());
+                return;
             }
         }
+
         updateCanvasWidthAndScrollbar();
 
-        if (autoScrollEnabled.get() && !(event instanceof PlotKeyValueEvent)) { // Don't auto-scroll for KV events alone
+        if (autoScrollEnabled.get() && !(event instanceof PlotKeyValueEvent)) {
             scrollToTimestamp(event.getTimestamp());
         }
 
         if (updateKeyValueTableNeeded) {
-            refreshKeyValueTable(); // Update table based on new KV data
+            refreshKeyValueTable();
         }
 
-        redrawMainGraph(); // Redraw main graph with new data
+        redrawMainGraph();
         if (isFirstEvent || (event instanceof PlotYLimitsEvent)) {
             redrawYAxis();
         }
     }
+
+
+//    public void addPlotEvent(PlotDataEvent event) {
+//        if (event == null) return;
+//
+//        boolean updateKeyValueTableNeeded = false; // Flag to update KV table
+//
+//        boolean isFirstEvent = (firstTimestamp == -1);
+//        if (isFirstEvent) {
+//            firstTimestamp = event.getTimestamp();
+//        }
+//        // Update lastTimestamp regardless
+//        if (lastTimestamp == -1 || event.getTimestamp() > lastTimestamp) {
+//            lastTimestamp = event.getTimestamp();
+//        }
+//
+//        synchronized (plotEvents) {
+//            if (!(event instanceof PlotKeyValueEvent)) { // Don't add KV events to the main graph events
+//                if (plotEvents.size() >= MAX_PLOT_EVENTS) {
+//                    // If removing, need to check if firstTimestamp needs update (complex, handle later if necessary)
+//                    // For now, simple removal from start. This could make plot jump if firstTimestamp changes.
+//                    PlotDataEvent removed = plotEvents.remove(0);
+//                    if (firstTimestamp == removed.getTimestamp() && !plotEvents.isEmpty()) {
+//                        firstTimestamp = plotEvents.get(0).getTimestamp();
+//                    } else if (plotEvents.isEmpty()) {
+//                        firstTimestamp = -1;
+//                        lastTimestamp = -1;
+//                    }
+//                }
+//                plotEvents.add(event);
+//            }
+//
+//            if (event instanceof PlotKeyValueEvent) {
+//                PlotKeyValueEvent kvEvent = (PlotKeyValueEvent) event;
+//                keyValueStore.computeIfAbsent(kvEvent.getKey(), k -> new ArrayList<>())
+//                        .add(new TimestampedStringValue(kvEvent.getTimestamp(), kvEvent.getValue()));
+//                // Sort the list for this key after adding (important for finding value at cursor)
+//                keyValueStore.get(kvEvent.getKey()).sort(null); // Natural sort by timestamp
+//                updateKeyValueTableNeeded = true;
+//            } else if (event instanceof PlotYLimitsEvent) {
+//                PlotYLimitsEvent yle = (PlotYLimitsEvent) event;
+//                setYLimits(yle.getMinY(), yle.getMaxY()); // Will redraw all
+//                // No return here, allow auto-scroll to potentially happen if enabled
+//            } else if (event instanceof PlotYUnitsEvent) {
+//                PlotYUnitsEvent yue = (PlotYUnitsEvent) event;
+//                setYUnit(yue.getUnit()); // Will redraw Y-axis
+//                return; // Y-units change doesn't affect scroll or main graph data positions
+//            }
+//        }
+//        updateCanvasWidthAndScrollbar();
+//
+//        if (autoScrollEnabled.get() && !(event instanceof PlotKeyValueEvent)) { // Don't auto-scroll for KV events alone
+//            scrollToTimestamp(event.getTimestamp());
+//        }
+//
+//        if (updateKeyValueTableNeeded) {
+//            refreshKeyValueTable(); // Update table based on new KV data
+//        }
+//
+//        redrawMainGraph(); // Redraw main graph with new data
+//        if (isFirstEvent || (event instanceof PlotYLimitsEvent)) {
+//            redrawYAxis();
+//        }
+//    }
 
     public void clearPlot() {
         synchronized (plotEvents) {
@@ -644,102 +787,245 @@ public class PlotDisplay extends Pane { // Will now act as a container for Canva
         int numHorizontalGridLines = 10;
         for (int i = 0; i <= numHorizontalGridLines; i++) {
             double yPosOnCanvas = (this.visibleGraphHeight / numHorizontalGridLines) * i;
-            // Clamp to ensure it's within the data plotting area (0 to visibleGraphHeight-1)
             if (yPosOnCanvas >= this.visibleGraphHeight) {
                 yPosOnCanvas = this.visibleGraphHeight -1;
-                if (yPosOnCanvas <0) yPosOnCanvas = 0; // if visibleGraphHeight is tiny
+                if (yPosOnCanvas <0) yPosOnCanvas = 0;
             }
             mainGc.strokeLine(0, yPosOnCanvas, mainGraphCanvas.getWidth(), yPosOnCanvas);
         }
 
-        // Vertical Grid Lines - draw through the data area only (0 to visibleGraphHeight)
+        // Vertical Grid Lines
         if (firstTimestamp != -1) {
             double gridTimeStepMs = 500;
-            // ... (adjust gridTimeStepMs) ...
             if(pixelsPerMillisecond * gridTimeStepMs < 20) gridTimeStepMs = 1000;
             if(pixelsPerMillisecond * gridTimeStepMs < 20) gridTimeStepMs = 2000;
             if(pixelsPerMillisecond * gridTimeStepMs < 20) gridTimeStepMs = 5000;
 
-            long totalDurationMs = (lastTimestamp > firstTimestamp) ? (lastTimestamp - firstTimestamp) : 0;
             long maxTOnCanvas = firstTimestamp + (long)(mainGraphCanvas.getWidth() / pixelsPerMillisecond) + (long)gridTimeStepMs;
 
             for (long t = (long)(Math.ceil(firstTimestamp / gridTimeStepMs) * gridTimeStepMs); t <= maxTOnCanvas; t += gridTimeStepMs) {
                 if (t < firstTimestamp) continue;
                 double xScreen = timeMsToScreenX(t);
                 if (xScreen >= 0 && xScreen <= mainGraphCanvas.getWidth()) {
-                    mainGc.strokeLine(xScreen, 0, xScreen, this.visibleGraphHeight -1); // End at bottom of data area
+                    mainGc.strokeLine(xScreen, 0, xScreen, this.visibleGraphHeight -1);
                 }
             }
         }
 
-        // X-axis line - at the bottom of the data plotting area
+        // X-axis line
         double xAxisLineY = this.visibleGraphHeight - 1;
         if (xAxisLineY < 0) xAxisLineY = 0;
-
         mainGc.setStroke(Color.BLACK);
         mainGc.setLineWidth(1.0);
         mainGc.strokeLine(0, xAxisLineY, mainGraphCanvas.getWidth(), xAxisLineY);
 
-        // X-axis Labels and Ticks - drawn BELOW xAxisLineY, in the extra space
+        // X-axis Labels and Ticks
         mainGc.setFill(Color.BLACK);
         mainGc.setFont(Font.font("Arial", 10));
         mainGc.setTextAlign(TextAlignment.CENTER);
 
         if (firstTimestamp != -1) {
             double gridTimeStepMs = 500;
-            // ... (adjust gridTimeStepMs) ...
-            if(pixelsPerMillisecond * gridTimeStepMs < 20) gridTimeStepMs = 1000;
-            if(pixelsPerMillisecond * gridTimeStepMs < 20) gridTimeStepMs = 2000;
-            if(pixelsPerMillisecond * gridTimeStepMs < 20) gridTimeStepMs = 5000;
+            if(pixelsPerMillisecond * gridTimeStepMs < 40) gridTimeStepMs = 1000; // Increased spacing slightly
+            if(pixelsPerMillisecond * gridTimeStepMs < 40) gridTimeStepMs = 2000;
+            if(pixelsPerMillisecond * gridTimeStepMs < 40) gridTimeStepMs = 5000;
 
-            long totalDurationMs = (lastTimestamp > firstTimestamp) ? (lastTimestamp - firstTimestamp) : 0;
             long maxTOnCanvas = firstTimestamp + (long)(mainGraphCanvas.getWidth() / pixelsPerMillisecond) + (long)gridTimeStepMs;
 
             for (long t = (long)(Math.ceil(firstTimestamp / gridTimeStepMs) * gridTimeStepMs); t <= maxTOnCanvas; t += gridTimeStepMs) {
                 if (t < firstTimestamp) continue;
 
                 double xScreenOnCanvas = timeMsToScreenX(t);
-                double xInView = xScreenOnCanvas + mainGraphCanvas.getTranslateX();
 
-                if (xInView >= -visibleGraphWidth * 0.5 && xInView <= visibleGraphWidth * 1.5) {
-                    String labelText = String.format(Locale.US, "%.1fs", (t - firstTimestamp) / 1000.0);
+                // --- CHANGE 1: Remove "s" from label text ---
+                String labelText = String.format(Locale.US, "%.1f", (t - firstTimestamp) / 1000.0);
 
-                    // --- NEW Y POSITIONS FOR X-AXIS LABELS AND TICKS ---
-                    // Draw them in the X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS below xAxisLineY
-                    double tickStartY = xAxisLineY;                                 // Ticks start ON the X-axis line
-                    double tickEndY = xAxisLineY + 4;                               // Ticks go 4px down
-                    double labelTextY = xAxisLineY + 15;                            // Text baseline 15px below X-axis line
+                double tickStartY = xAxisLineY;
+                double tickEndY = xAxisLineY + 4;
+                double labelTextY = xAxisLineY + 15;
 
-                    // Ensure these are within the new taller mainGraphCanvas height
-                    if (tickEndY > mainGraphCanvas.getHeight() -1) tickEndY = mainGraphCanvas.getHeight() -1;
-                    if (labelTextY > mainGraphCanvas.getHeight() - 5) labelTextY = mainGraphCanvas.getHeight() - 5; // Keep text from bottom edge
+                if (tickEndY > mainGraphCanvas.getHeight() -1) tickEndY = mainGraphCanvas.getHeight() -1;
+                if (labelTextY > mainGraphCanvas.getHeight() - 5) labelTextY = mainGraphCanvas.getHeight() - 5;
 
-                    mainGc.strokeLine(xScreenOnCanvas, tickStartY, xScreenOnCanvas, tickEndY);
-                    mainGc.fillText(labelText, xScreenOnCanvas, labelTextY);
-
-                    System.out.println("X-Label: t=" + ((t - firstTimestamp)/1000.0) + "s, xScreen=" + xScreenOnCanvas + ", labelY=" + labelTextY);
-                }
+                mainGc.strokeLine(xScreenOnCanvas, tickStartY, xScreenOnCanvas, tickEndY);
+                mainGc.fillText(labelText, xScreenOnCanvas, labelTextY);
             }
+
+            // --- CHANGE 2: Add a single "Seconds" unit label for the whole axis ---
+            mainGc.setFont(Font.font("Arial", FontWeight.NORMAL, 12));
+            mainGc.setTextAlign(TextAlignment.CENTER);
+            // Position it centered horizontally within the visible graph area, and below the numbers
+            double axisLabelX = visibleGraphWidth / 2.0;
+            double axisLabelY = this.visibleGraphHeight + X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS - 5; // Near the bottom
+            mainGc.fillText("Seconds", axisLabelX, axisLabelY);
         }
 
-        drawData(); // Draws points, lines, text annotations
+        drawData();
 
-        // +++ Draw Mouse Cursor Line +++
+        // Draw Mouse Cursor Line
         if (isMouseInPlotArea && mousePlotX >= 0 && currentCursorTimeMs != -1) {
             mainGc.save();
             mainGc.setStroke(CURSOR_LINE_COLOR);
             mainGc.setLineWidth(1.0);
-            mainGc.setLineDashes(5, 3); // Dashed line for cursor
+            mainGc.setLineDashes(5, 3);
             mainGc.setLineCap(StrokeLineCap.BUTT);
-            // mousePlotX is already in mainGraphCanvas coordinates (relative to its potentially wider scrollable content)
-            mainGc.strokeLine(mousePlotX, 0, mousePlotX, this.visibleGraphHeight -1); // Span data area
+            mainGc.strokeLine(mousePlotX, 0, mousePlotX, this.visibleGraphHeight -1);
+            if (mousePlotY >= 0 && mousePlotY < this.visibleGraphHeight) {
+                // Line should span the entire width of the scrollable canvas content
+                mainGc.strokeLine(0, mousePlotY, mainGraphCanvas.getWidth(), mousePlotY);
+            }
             mainGc.restore();
 
+            // Update and position cursor coordinate labels
+            if (mousePlotY >= 0 && mousePlotY < this.visibleGraphHeight) {
+                // Calculate values
+                double timeValueSec = (currentCursorTimeMs - firstTimestamp) / 1000.0;
+                double yValue = screenYToYValue(mousePlotY);
 
-            // +++ Draw the actual text readouts +++
-            drawCursorDataReadouts(); // Uses stored values from styleToReadout... maps
+                // Update label text
+                cursorXLabel.setText(String.format(Locale.US, "%.2fs", timeValueSec));
+                cursorYLabel.setText(formatNiceNumber(yValue, currentMaxY - currentMinY));
+
+//                // Position labels
+//                // X Label (Time): At the bottom of the graph, centered on the vertical cursor line
+//                double cursorScreenX = this.graphContainer.getLayoutX() + mousePlotX + mainGraphCanvas.getTranslateX();
+//                cursorXLabel.setLayoutX(cursorScreenX - (cursorXLabel.prefWidth(-1) / 2));
+//                cursorXLabel.setLayoutY(PADDING_TOP + visibleGraphHeight - cursorXLabel.prefHeight(-1));
+//
+//                // Y Label (Value): On the left of the graph, centered on the horizontal cursor line
+//                cursorYLabel.setLayoutX(PADDING_LEFT_FOR_Y_AXIS);
+//                cursorYLabel.setLayoutY(PADDING_TOP + mousePlotY - (cursorYLabel.prefHeight(-1) / 2));
+
+                // Position labels on the axes, outside the main plot area.
+                // X Label (Time): Below the X-axis line.
+                double cursorScreenX = this.graphContainer.getLayoutX() + mousePlotX + mainGraphCanvas.getTranslateX();
+                cursorXLabel.setLayoutX(cursorScreenX - (cursorXLabel.prefWidth(-1) / 2));
+                cursorXLabel.setLayoutY(PADDING_TOP + visibleGraphHeight + 3); // Position just below the X-axis line.
+                // Y Label (Value): To the left of the Y-axis line.
+                cursorYLabel.setLayoutY(PADDING_TOP + mousePlotY - (cursorYLabel.prefHeight(-1) / 2));
+                // Position it so its right edge is just to the left of the Y-axis.
+                cursorYLabel.setLayoutX(PADDING_LEFT_FOR_Y_AXIS - cursorYLabel.prefWidth(-1) - 3);
+
+                cursorXLabel.setVisible(true);
+                cursorYLabel.setVisible(true);
+            }
+
+            updateReadoutLabelPositions();
+        } else {
+            // Hide all cursor-related labels when mouse is out
+            cursorXLabel.setVisible(false);
+            cursorYLabel.setVisible(false);
+            updateReadoutLabelPositions();
         }
     }
+
+//    private void redrawMainGraph() {
+//        // mainGraphCanvas is now taller: height = visibleGraphHeight + X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS
+//        mainGc.clearRect(0, 0, mainGraphCanvas.getWidth(), mainGraphCanvas.getHeight());
+//
+//        // Horizontal Grid Lines - only draw within the data area (0 to visibleGraphHeight)
+//        mainGc.setStroke(Color.LIGHTGRAY);
+//        mainGc.setLineWidth(0.5);
+//        int numHorizontalGridLines = 10;
+//        for (int i = 0; i <= numHorizontalGridLines; i++) {
+//            double yPosOnCanvas = (this.visibleGraphHeight / numHorizontalGridLines) * i;
+//            // Clamp to ensure it's within the data plotting area (0 to visibleGraphHeight-1)
+//            if (yPosOnCanvas >= this.visibleGraphHeight) {
+//                yPosOnCanvas = this.visibleGraphHeight -1;
+//                if (yPosOnCanvas <0) yPosOnCanvas = 0; // if visibleGraphHeight is tiny
+//            }
+//            mainGc.strokeLine(0, yPosOnCanvas, mainGraphCanvas.getWidth(), yPosOnCanvas);
+//        }
+//
+//        // Vertical Grid Lines - draw through the data area only (0 to visibleGraphHeight)
+//        if (firstTimestamp != -1) {
+//            double gridTimeStepMs = 500;
+//            // ... (adjust gridTimeStepMs) ...
+//            if(pixelsPerMillisecond * gridTimeStepMs < 20) gridTimeStepMs = 1000;
+//            if(pixelsPerMillisecond * gridTimeStepMs < 20) gridTimeStepMs = 2000;
+//            if(pixelsPerMillisecond * gridTimeStepMs < 20) gridTimeStepMs = 5000;
+//
+//            long totalDurationMs = (lastTimestamp > firstTimestamp) ? (lastTimestamp - firstTimestamp) : 0;
+//            long maxTOnCanvas = firstTimestamp + (long)(mainGraphCanvas.getWidth() / pixelsPerMillisecond) + (long)gridTimeStepMs;
+//
+//            for (long t = (long)(Math.ceil(firstTimestamp / gridTimeStepMs) * gridTimeStepMs); t <= maxTOnCanvas; t += gridTimeStepMs) {
+//                if (t < firstTimestamp) continue;
+//                double xScreen = timeMsToScreenX(t);
+//                if (xScreen >= 0 && xScreen <= mainGraphCanvas.getWidth()) {
+//                    mainGc.strokeLine(xScreen, 0, xScreen, this.visibleGraphHeight -1); // End at bottom of data area
+//                }
+//            }
+//        }
+//
+//        // X-axis line - at the bottom of the data plotting area
+//        double xAxisLineY = this.visibleGraphHeight - 1;
+//        if (xAxisLineY < 0) xAxisLineY = 0;
+//
+//        mainGc.setStroke(Color.BLACK);
+//        mainGc.setLineWidth(1.0);
+//        mainGc.strokeLine(0, xAxisLineY, mainGraphCanvas.getWidth(), xAxisLineY);
+//
+//        // X-axis Labels and Ticks - drawn BELOW xAxisLineY, in the extra space
+//        mainGc.setFill(Color.BLACK);
+//        mainGc.setFont(Font.font("Arial", 10));
+//        mainGc.setTextAlign(TextAlignment.CENTER);
+//
+//        if (firstTimestamp != -1) {
+//            double gridTimeStepMs = 500;
+//            // ... (adjust gridTimeStepMs) ...
+//            if(pixelsPerMillisecond * gridTimeStepMs < 20) gridTimeStepMs = 1000;
+//            if(pixelsPerMillisecond * gridTimeStepMs < 20) gridTimeStepMs = 2000;
+//            if(pixelsPerMillisecond * gridTimeStepMs < 20) gridTimeStepMs = 5000;
+//
+//            long totalDurationMs = (lastTimestamp > firstTimestamp) ? (lastTimestamp - firstTimestamp) : 0;
+//            long maxTOnCanvas = firstTimestamp + (long)(mainGraphCanvas.getWidth() / pixelsPerMillisecond) + (long)gridTimeStepMs;
+//
+//            for (long t = (long)(Math.ceil(firstTimestamp / gridTimeStepMs) * gridTimeStepMs); t <= maxTOnCanvas; t += gridTimeStepMs) {
+//                if (t < firstTimestamp) continue;
+//
+//                double xScreenOnCanvas = timeMsToScreenX(t);
+//                double xInView = xScreenOnCanvas + mainGraphCanvas.getTranslateX();
+//
+//                if (xInView >= -visibleGraphWidth * 0.5 && xInView <= visibleGraphWidth * 1.5) {
+//                    String labelText = String.format(Locale.US, "%.1fs", (t - firstTimestamp) / 1000.0);
+//
+//                    // --- NEW Y POSITIONS FOR X-AXIS LABELS AND TICKS ---
+//                    // Draw them in the X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS below xAxisLineY
+//                    double tickStartY = xAxisLineY;                                 // Ticks start ON the X-axis line
+//                    double tickEndY = xAxisLineY + 4;                               // Ticks go 4px down
+//                    double labelTextY = xAxisLineY + 15;                            // Text baseline 15px below X-axis line
+//
+//                    // Ensure these are within the new taller mainGraphCanvas height
+//                    if (tickEndY > mainGraphCanvas.getHeight() -1) tickEndY = mainGraphCanvas.getHeight() -1;
+//                    if (labelTextY > mainGraphCanvas.getHeight() - 5) labelTextY = mainGraphCanvas.getHeight() - 5; // Keep text from bottom edge
+//
+//                    mainGc.strokeLine(xScreenOnCanvas, tickStartY, xScreenOnCanvas, tickEndY);
+//                    mainGc.fillText(labelText, xScreenOnCanvas, labelTextY);
+//
+//                    System.out.println("X-Label: t=" + ((t - firstTimestamp)/1000.0) + "s, xScreen=" + xScreenOnCanvas + ", labelY=" + labelTextY);
+//                }
+//            }
+//        }
+//
+//        drawData(); // Draws points, lines, text annotations
+//
+//        // +++ Draw Mouse Cursor Line +++
+//        if (isMouseInPlotArea && mousePlotX >= 0 && currentCursorTimeMs != -1) {
+//            mainGc.save();
+//            mainGc.setStroke(CURSOR_LINE_COLOR);
+//            mainGc.setLineWidth(1.0);
+//            mainGc.setLineDashes(5, 3); // Dashed line for cursor
+//            mainGc.setLineCap(StrokeLineCap.BUTT);
+//            // mousePlotX is already in mainGraphCanvas coordinates (relative to its potentially wider scrollable content)
+//            mainGc.strokeLine(mousePlotX, 0, mousePlotX, this.visibleGraphHeight -1); // Span data area
+//            mainGc.restore();
+//
+//
+//            // +++ Draw the actual text readouts +++
+////            drawCursorDataReadouts(); // Uses stored values from styleToReadout... maps
+//            updateReadoutLabelPositions(); // This will move the JavaFX Labels
+//        }
+//    }
 
     private String formatNiceNumber(double value, double range) { /* ... same as before ... */
         if (range >= 200 || Math.abs(value) >= 100) return String.format(Locale.US, "%.0f", value);
@@ -818,6 +1104,11 @@ public class PlotDisplay extends Pane { // Will now act as a container for Canva
         }
     }
 
+    private double screenYToYValue(double yScreen) {
+        if (currentMaxY <= currentMinY) return currentMinY;
+        // Converts a Y coordinate on the mainGraphCanvas back to a data value
+        return currentMinY + ((visibleGraphHeight - yScreen) / visibleGraphHeight) * (currentMaxY - currentMinY);
+    }
 
     // New method to draw the marker text annotation
     private void drawMarkerTextAnnotation(PlotTextAnnotationEvent markerEvent) {
@@ -936,14 +1227,19 @@ public class PlotDisplay extends Pane { // Will now act as a container for Canva
         }
     }
 
+
+    // In PlotDisplay.java, REPLACE the entire updateAndDrawDataReadouts() method
+
     private void updateAndDrawDataReadouts() {
+        // This method now primarily updates the *data* for the labels.
+        // The actual positioning happens in updateReadoutLabelPositions().
+
         if (!isMouseInPlotArea || currentCursorTimeMs == -1 || firstTimestamp == -1) {
             styleToReadoutValueString.clear();
             styleToReadoutScreenY.clear();
             styleToReadoutDataY.clear();
             styleToReadoutColor.clear();
-            // No need to explicitly redraw here if this is called before drawing data in redrawMainGraph
-            return;
+            return; // Early exit, positioning method will hide all labels
         }
 
         // Clear previous readouts before recalculating
@@ -952,177 +1248,158 @@ public class PlotDisplay extends Pane { // Will now act as a container for Canva
         styleToReadoutDataY.clear();
         styleToReadoutColor.clear();
 
-        Set<Integer> activeStyles = new TreeSet<>(); // Keep styles sorted for consistent processing order
+        // ... [The entire logic for finding the closest points, interpolating, and filling the
+        //     `styleToReadoutValueString`, `styleToReadoutScreenY`, `styleToReadoutDataY`,
+        //     and `styleToReadoutColor` maps remains EXACTLY THE SAME as before.] ...
+        // ... [This includes the synchronized block, the loops, the interpolation, the staggering, etc.] ...
+
+        // The logic from your existing `updateAndDrawDataReadouts` that populates
+        // the styleTo... maps is perfect. We just need to add the Label update at the end.
+        // For brevity, I'll paste the whole method with the new part added at the end.
 
         synchronized (plotEvents) {
-            // Identify active styles and find closest point/line for each
+            // --- Same logic as before to find and interpolate data ---
+            Set<Integer> activeStyles = new TreeSet<>();
+            // This is a simplified placeholder for your more complex and correct logic
+            // For each active style found near the cursor:
+            // 1. Find interpolated Y value
+            // 2. Populate the `styleToReadout...` maps
+            // For example, after your loops and interpolation:
+            // if (!Double.isNaN(interpolatedY)) {
+            //     styleToReadoutValueString.put(styleId, readoutValueFormat.format(interpolatedY));
+            //     styleToReadoutScreenY.put(styleId, yValueToScreenY(interpolatedY));
+            //     styleToReadoutDataY.put(styleId, interpolatedY);
+            //     styleToReadoutColor.put(styleId, ...);
+            // }
+            // ... then, after that, you stagger the Y positions in `styleToReadoutScreenY`.
+            // The entire block from your file goes here.
+
+            // For this response, I am assuming the logic to populate the maps is run,
+            // and now we will update the Labels based on the results.
+            // Let's re-paste your full logic here for completeness.
             for (PlotDataEvent event : plotEvents) {
-                if (event.getTimestamp() > currentCursorTimeMs + (visibleGraphWidth / pixelsPerMillisecond) ||
-                        event.getTimestamp() < currentCursorTimeMs - (visibleGraphWidth / pixelsPerMillisecond)) {
-                    // Basic culling: only consider events somewhat near the cursor's time view
-                    // This is a loose filter; more precise "closest" logic follows.
-                    // Continue; //This might be too aggressive if a line starts/ends far but crosses view
-                }
-
                 int style = -1;
-                double yValue = Double.NaN;
-                Color eventColor = READOUT_TEXT_COLOR_DEFAULT;
-
-                if (event instanceof PlotPointEvent) {
-                    PlotPointEvent pEvent = (PlotPointEvent) event;
-                    style = pEvent.getStyle();
-                    yValue = pEvent.getYValue();
-                    if (style >= 1 && style <= POINT_COLORS.length) {
-                        eventColor = POINT_COLORS[style - 1];
-                    }
-                } else if (event instanceof PlotLineEvent) {
-                    PlotLineEvent lEvent = (PlotLineEvent) event;
-                    style = lEvent.getStyle();
-                    // For line events, this yValue is an endpoint. Interpolation is handled below.
-                    yValue = lEvent.getYValue(); // Placeholder, real value comes from interpolation or endpoint
-                    if (style >= 1 && style <= LINE_STYLES.length) {
-                        eventColor = LINE_STYLES[style - 1].color;
-                    }
-                }
-
-                if (style != -1) {
-                    activeStyles.add(style);
-                    // This simple approach just takes the last Y-value encountered for a style
-                    // We need to find the *closest* one.
-                }
+                if (event instanceof PlotPointEvent) style = ((PlotPointEvent) event).getStyle();
+                else if (event instanceof PlotLineEvent) style = ((PlotLineEvent) event).getStyle();
+                if (style != -1) activeStyles.add(style);
             }
 
-            // For each active style, find the *actual* closest data
             for (int styleId : activeStyles) {
-                PlotDataEvent closestEvent = null;
-                PlotDataEvent prevEventForLine = null; // For line interpolation
-                long minTimeDiff = Long.MAX_VALUE;
-
-                // Find the event of this style closest to cursorTime
-                for (PlotDataEvent event : plotEvents) {
-                    int currentEventStyle = -1;
-                    if (event instanceof PlotPointEvent && ((PlotPointEvent) event).getStyle() == styleId) {
-                        currentEventStyle = styleId;
-                    } else if (event instanceof PlotLineEvent && ((PlotLineEvent) event).getStyle() == styleId) {
-                        currentEventStyle = styleId;
-                    }
-
-                    if (currentEventStyle == styleId) {
-                        long timeDiff = Math.abs(event.getTimestamp() - currentCursorTimeMs);
-                        if (timeDiff < minTimeDiff) {
-                            minTimeDiff = timeDiff;
-                            closestEvent = event;
-                        }
-                        // For line interpolation, also keep track of the event just BEFORE closestEvent
-                        // if closestEvent itself is a LineEvent, to form a segment.
-                        // This logic gets complex quickly. Let's simplify: find closest segment for lines.
-                    }
-                }
-
-                // Simpler approach for lines for now: find line segment that STRADDLES cursor time
-                // or closest endpoint if no straddle.
                 PlotLineEvent lineStartEvent = null;
                 PlotLineEvent lineEndEvent = null;
-                PlotPointEvent closestPointForStyle = null;
                 double interpolatedY = Double.NaN;
-
-                // Pass 1: Find straddling line segment for this style
                 PlotLineEvent lastLineEventOfStyle = null;
                 for (PlotDataEvent event : plotEvents) {
-                    if (event instanceof PlotLineEvent && ((PlotLineEvent)event).getStyle() == styleId) {
+                    if (event instanceof PlotLineEvent && ((PlotLineEvent) event).getStyle() == styleId) {
                         PlotLineEvent currentLineEvent = (PlotLineEvent) event;
                         if (lastLineEventOfStyle != null) {
-                            // Check if currentCursorTimeMs is between lastLineEventOfStyle and currentLineEvent
                             long t1 = lastLineEventOfStyle.getTimestamp();
                             long t2 = currentLineEvent.getTimestamp();
-                            if ((t1 <= currentCursorTimeMs && currentCursorTimeMs <= t2) ||
-                                    (t2 <= currentCursorTimeMs && currentCursorTimeMs <= t1)) {
+                            if ((t1 <= currentCursorTimeMs && currentCursorTimeMs <= t2) || (t2 <= currentCursorTimeMs && currentCursorTimeMs <= t1)) {
                                 lineStartEvent = lastLineEventOfStyle;
                                 lineEndEvent = currentLineEvent;
-                                break; // Found a straddling segment
+                                break;
                             }
                         }
                         lastLineEventOfStyle = currentLineEvent;
                     }
                 }
-
-                if (lineStartEvent != null && lineEndEvent != null) { // Straddling line found
+                if (lineStartEvent != null && lineEndEvent != null) {
                     double y1 = lineStartEvent.getYValue();
                     double y2 = lineEndEvent.getYValue();
                     long t1 = lineStartEvent.getTimestamp();
                     long t2 = lineEndEvent.getTimestamp();
-                    if (t1 == t2) { // Vertical line segment, or same point
-                        interpolatedY = y1; // Or average, or closest in time if different y values
-                    } else {
-                        // Linear interpolation: y = y1 + (x - x1) * (y2 - y1) / (x2 - x1)
-                        interpolatedY = y1 + (double)(currentCursorTimeMs - t1) * (y2 - y1) / (double)(t2 - t1);
-                    }
-                    if (styleId >= 1 && styleId <= LINE_STYLES.length) {
-                        styleToReadoutColor.put(styleId, LINE_STYLES[styleId - 1].color);
-                    }
+                    interpolatedY = (t1 == t2) ? y1 : y1 + (double) (currentCursorTimeMs - t1) * (y2 - y1) / (double) (t2 - t1);
+                    if (styleId >= 1 && styleId <= LINE_STYLES.length) styleToReadoutColor.put(styleId, LINE_STYLES[styleId - 1].color);
                 } else {
-                    // No straddling line, find closest point OR line endpoint of this style
-                    closestEvent = null; // Reset from general closest search
-                    minTimeDiff = Long.MAX_VALUE;
+                    long minTimeDiff = Long.MAX_VALUE;
                     for (PlotDataEvent event : plotEvents) {
                         int eventStyle = -1;
                         double eventY = Double.NaN;
                         Color color = READOUT_TEXT_COLOR_DEFAULT;
-
-                        if (event instanceof PlotPointEvent && ((PlotPointEvent)event).getStyle() == styleId) {
+                        if (event instanceof PlotPointEvent && ((PlotPointEvent) event).getStyle() == styleId) {
                             eventStyle = styleId;
-                            eventY = ((PlotPointEvent)event).getYValue();
-                            if (styleId >= 1 && styleId <= POINT_COLORS.length) color = POINT_COLORS[styleId-1];
-                        } else if (event instanceof PlotLineEvent && ((PlotLineEvent)event).getStyle() == styleId) {
+                            eventY = ((PlotPointEvent) event).getYValue();
+                            if (styleId >= 1 && styleId <= POINT_COLORS.length) color = POINT_COLORS[styleId - 1];
+                        } else if (event instanceof PlotLineEvent && ((PlotLineEvent) event).getStyle() == styleId) {
                             eventStyle = styleId;
-                            eventY = ((PlotLineEvent)event).getYValue(); // Endpoint of a line
-                            if (styleId >= 1 && styleId <= LINE_STYLES.length) color = LINE_STYLES[styleId-1].color;
+                            eventY = ((PlotLineEvent) event).getYValue();
+                            if (styleId >= 1 && styleId <= LINE_STYLES.length) color = LINE_STYLES[styleId - 1].color;
                         }
-
                         if (eventStyle != -1) {
                             long timeDiff = Math.abs(event.getTimestamp() - currentCursorTimeMs);
                             if (timeDiff < minTimeDiff) {
                                 minTimeDiff = timeDiff;
-                                interpolatedY = eventY; // Use the direct Y value of the closest point/endpoint
+                                interpolatedY = eventY;
                                 styleToReadoutColor.put(styleId, color);
                             }
                         }
                     }
                 }
-
                 if (!Double.isNaN(interpolatedY)) {
                     styleToReadoutValueString.put(styleId, readoutValueFormat.format(interpolatedY));
-                    styleToReadoutScreenY.put(styleId, yValueToScreenY(interpolatedY)); // For initial placement
-                    styleToReadoutDataY.put(styleId, interpolatedY); // For sorting/staggering
+                    styleToReadoutScreenY.put(styleId, yValueToScreenY(interpolatedY));
+                    styleToReadoutDataY.put(styleId, interpolatedY);
                 }
             }
-        } // end synchronized
+        }
 
-        // Stagger Y positions if they are too close - basic approach
         if (!styleToReadoutScreenY.isEmpty()) {
             List<Map.Entry<Integer, Double>> sortedReadouts = new ArrayList<>(styleToReadoutDataY.entrySet());
-            // Sort by data Y value to process them in visual order (e.g., top to bottom)
             sortedReadouts.sort(Map.Entry.comparingByValue());
-
-            TreeSet<Double> occupiedScreenYSlots = new TreeSet<>(); // Screen Y positions already taken
-
+            TreeSet<Double> occupiedScreenYSlots = new TreeSet<>();
             for (Map.Entry<Integer, Double> entry : sortedReadouts) {
                 int styleId = entry.getKey();
-                double targetScreenY = yValueToScreenY(entry.getValue()); // Convert data Y to screen Y
-
-                // Adjust targetScreenY to avoid overlap
+                double targetScreenY = yValueToScreenY(entry.getValue());
                 while (isSlotOccupied(targetScreenY, occupiedScreenYSlots)) {
-                    targetScreenY += READOUT_TEXT_Y_SPACING / 2.0; // Shift down slightly
+                    targetScreenY += READOUT_TEXT_Y_SPACING / 2.0;
                 }
-                // Ensure it's within bounds
-                targetScreenY = MathUtil.clip(targetScreenY, 5, visibleGraphHeight - 5);
-
+                targetScreenY = MathUtil.clip(targetScreenY, 5, visibleGraphHeight - 10);
                 styleToReadoutScreenY.put(styleId, targetScreenY);
-                occupiedScreenYSlots.add(targetScreenY - READOUT_TEXT_Y_SPACING / 2.0); // Mark range as occupied
+                occupiedScreenYSlots.add(targetScreenY - READOUT_TEXT_Y_SPACING / 2.0);
                 occupiedScreenYSlots.add(targetScreenY + READOUT_TEXT_Y_SPACING / 2.0);
             }
         }
+
+        // --- NEW LOGIC: Update the actual Label nodes ---
+        Platform.runLater(() -> {
+            // Hide any labels that are no longer in the current readout data
+            for (Map.Entry<Integer, Label> labelEntry : styleToReadoutLabel.entrySet()) {
+                if (!styleToReadoutValueString.containsKey(labelEntry.getKey())) {
+                    labelEntry.getValue().setVisible(false);
+                }
+            }
+
+            for (Map.Entry<Integer, String> entry : styleToReadoutValueString.entrySet()) {
+                int styleId = entry.getKey();
+                String valueStr = entry.getValue();
+                // This is now the color for the BACKGROUND
+                Color seriesColor = styleToReadoutColor.getOrDefault(styleId, Color.BLACK);
+
+                // Get or create the label for this style
+                Label label = styleToReadoutLabel.computeIfAbsent(styleId, id -> {
+                    Label newLabel = new Label();
+                    newLabel.setFont(READOUT_LABEL_FONT);
+                    // Apply the static part of the style (padding, radius)
+                    newLabel.setStyle(READOUT_LABEL_STYLE);
+                    newLabel.setMouseTransparent(true);
+                    this.getChildren().add(newLabel);
+                    return newLabel;
+                });
+
+                // --- Apply dynamic styles ---
+                label.setText(valueStr);
+                // Set text to white for high contrast
+                label.setTextFill(Color.WHITE);
+                // Set the background color dynamically using an inline style
+                String r = String.format("%d", (int)(seriesColor.getRed() * 255));
+                String g = String.format("%d", (int)(seriesColor.getGreen() * 255));
+                String b = String.format("%d", (int)(seriesColor.getBlue() * 255));
+                label.setStyle(READOUT_LABEL_STYLE + String.format("-fx-background-color: rgb(%s, %s, %s);", r, g, b));
+            }
+        });
     }
+
 
     private boolean isSlotOccupied(double targetY, TreeSet<Double> slots) {
         // Check if targetY is too close to any existing slot
@@ -1135,27 +1412,398 @@ public class PlotDisplay extends Pane { // Will now act as a container for Canva
         return false;
     }
 
-    // Call this from redrawMainGraph
-    private void drawCursorDataReadouts() {
-        if (!isMouseInPlotArea || mousePlotX < 0 || styleToReadoutValueString.isEmpty()) {
+    /**
+     * Positions the visible readout Labels on the screen based on calculated staggered Y coordinates.
+     * This is called after the main graph is redrawn.
+     */
+    private void updateReadoutLabelPositions() {
+        if (!isMouseInPlotArea || mousePlotX < 0) {
+            // Hide all labels if mouse is not in the plot area
+            for (Label label : styleToReadoutLabel.values()) {
+                label.setVisible(false);
+            }
             return;
         }
 
-        mainGc.save();
-        mainGc.setTextAlign(TextAlignment.LEFT);
-        mainGc.setFont(Font.font("Arial", 10)); // Smaller font for readouts
+        // `mousePlotX` is relative to the scrollable mainGraphCanvas. We need the coordinate
+        // relative to the visible `graphContainer` or `this` pane.
+        double cursorScreenX = this.graphContainer.getLayoutX() + mousePlotX + mainGraphCanvas.getTranslateX();
 
-        for (Map.Entry<Integer, String> entry : styleToReadoutValueString.entrySet()) {
+        for (Map.Entry<Integer, Label> entry : styleToReadoutLabel.entrySet()) {
             int styleId = entry.getKey();
-            String valueStr = entry.getValue();
-            Double screenY = styleToReadoutScreenY.get(styleId);
-            Color textColor = styleToReadoutColor.getOrDefault(styleId, READOUT_TEXT_COLOR_DEFAULT);
+            Label label = entry.getValue();
 
-            if (screenY != null) {
-                mainGc.setFill(textColor);
-                mainGc.fillText(valueStr, mousePlotX + READOUT_TEXT_X_OFFSET, screenY);
+            // Check if there is data for this label to be shown
+            if (styleToReadoutScreenY.containsKey(styleId)) {
+                double screenY = styleToReadoutScreenY.get(styleId);
+
+                // Position the label relative to the PlotDisplay pane's coordinates
+                label.setLayoutX(cursorScreenX + READOUT_TEXT_X_OFFSET);
+                // The screenY is relative to the mainGraphCanvas, so we need to add the top padding offset
+                label.setLayoutY(PADDING_TOP + screenY);
+                label.setVisible(true);
+            } else {
+                // Hide labels for styles that are no longer near the cursor
+                label.setVisible(false);
             }
         }
-        mainGc.restore();
     }
+
+    // --- NEW: Save and Load Functionality ---
+
+    /**
+     * A helper function to escape quote characters inside a string for saving.
+     */
+    private String escapeString(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    /**
+     * Saves all current plot events and key-value data to a text file.
+     * @param file The file to save the data to.
+     */
+    public void savePlotData(File file) {
+        StringBuilder sb = new StringBuilder();
+
+        // Combine all data sources into a single list and sort by timestamp
+        List<PlotDataEvent> allData = new ArrayList<>();
+        synchronized (plotEvents) {
+            allData.addAll(plotEvents);
+        }
+        synchronized (keyValueStore) {
+            for (Map.Entry<String, List<TimestampedStringValue>> entry : keyValueStore.entrySet()) {
+                String key = entry.getKey();
+                for (TimestampedStringValue val : entry.getValue()) {
+                    allData.add(new PlotKeyValueEvent(val.timestamp(), key, val.value()));
+                }
+            }
+        }
+
+        // Sort by timestamp to save in chronological order
+        allData.sort(Comparator.comparingLong(PlotDataEvent::getTimestamp));
+
+        for (PlotDataEvent event : allData) {
+            long ts = event.getTimestamp();
+            if (event instanceof PlotPointEvent) {
+                PlotPointEvent e = (PlotPointEvent) event;
+                sb.append(String.format(Locale.US, "POINT %d %d %.6f\n", ts, e.getStyle(), e.getYValue()));
+            } else if (event instanceof PlotLineEvent) {
+                PlotLineEvent e = (PlotLineEvent) event;
+                sb.append(String.format(Locale.US, "LINE %d %d %.6f\n", ts, e.getStyle(), e.getYValue()));
+            } else if (event instanceof PlotKeyValueEvent) {
+                PlotKeyValueEvent e = (PlotKeyValueEvent) event;
+                sb.append(String.format("KV %d \"%s\" \"%s\"\n", ts, escapeString(e.getKey()), escapeString(e.getValue())));
+            } else if (event instanceof PlotTextAnnotationEvent) {
+                PlotTextAnnotationEvent e = (PlotTextAnnotationEvent) event;
+                sb.append(String.format("MARKER %d %s \"%s\"\n", ts, e.getPositionKeyword(), escapeString(e.getText())));
+            } else if (event instanceof PlotYLimitsEvent) {
+                PlotYLimitsEvent e = (PlotYLimitsEvent) event;
+                sb.append(String.format(Locale.US, "YLIMITS %d %.6f %.6f\n", ts, e.getMinY(), e.getMaxY()));
+            } else if (event instanceof PlotYUnitsEvent) {
+                PlotYUnitsEvent e = (PlotYUnitsEvent) event;
+                sb.append(String.format("YUNITS %d \"%s\"\n", ts, escapeString(e.getUnit())));
+            }
+        }
+
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
+            writer.write(sb.toString());
+        } catch (IOException ex) {
+            ex.printStackTrace();
+            System.err.println("Error saving plot data: " + ex.getMessage());
+        }
+    }
+
+    /**
+     * Loads plot data from a file, replacing any existing data.
+     * @param file The file to load data from.
+     */
+    public void loadPlotData(File file) {
+        Platform.runLater(() -> {
+            clearPlot();
+
+            // Regex for parsing lines with potentially quoted strings.
+            Pattern linePattern = Pattern.compile("^(\\S+)\\s(.*)$");
+            Pattern argPattern = Pattern.compile("\"([^\"]*)\"|\\S+");
+
+            try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+                // --- NEW: First pass to find the minimum timestamp for normalization ---
+                long minTimestampInFile = Long.MAX_VALUE;
+                String firstLine = null;
+                String line;
+                List<String> allLines = new ArrayList<>();
+
+                while ((line = reader.readLine()) != null) {
+                    allLines.add(line); // Store lines to read again in the second pass
+                    Matcher lineMatcher = linePattern.matcher(line.trim());
+                    if (!lineMatcher.matches()) continue;
+
+                    String argsStr = lineMatcher.group(2);
+                    // Fast way to get the first argument (the timestamp)
+                    String[] parts = argsStr.split(" ", 2);
+                    if (parts.length > 0) {
+                        try {
+                            long ts = Long.parseLong(parts[0]);
+                            if (ts < minTimestampInFile) {
+                                minTimestampInFile = ts;
+                            }
+                        } catch (NumberFormatException ex) {
+                            // Ignore lines where the first argument isn't a valid timestamp
+                        }
+                    }
+                }
+                // If no valid timestamps were found, do nothing.
+                if (minTimestampInFile == Long.MAX_VALUE) {
+                    resetViewToFitData(); // Will show an empty plot
+                    return;
+                }
+                // --- End of First Pass ---
+
+
+                // --- Second Pass: Process all lines using the normalization offset ---
+                for (String storedLine : allLines) {
+                    Matcher lineMatcher = linePattern.matcher(storedLine.trim());
+                    if (!lineMatcher.matches()) continue;
+
+                    String type = lineMatcher.group(1);
+                    String argsStr = lineMatcher.group(2);
+
+                    Matcher argMatcher = argPattern.matcher(argsStr);
+                    List<String> args = new ArrayList<>();
+                    while (argMatcher.find()) {
+                        args.add(argMatcher.group(1) != null ? argMatcher.group(1) : argMatcher.group());
+                    }
+                    if (args.isEmpty()) continue;
+
+                    try {
+                        // Normalize the timestamp by subtracting the file's first timestamp
+                        long originalTimestamp = Long.parseLong(args.get(0));
+                        long timestamp = originalTimestamp - minTimestampInFile; // NORMALIZATION
+                        PlotDataEvent event = null;
+
+                        switch (type) {
+                            case "POINT":
+                                if (args.size() >= 3) {
+                                    int style = Integer.parseInt(args.get(1));
+                                    double yValue = Double.parseDouble(args.get(2));
+                                    event = new PlotPointEvent(timestamp, yValue, style);
+                                }
+                                break;
+                            case "LINE":
+                                if (args.size() >= 3) {
+                                    int style = Integer.parseInt(args.get(1));
+                                    double yValue = Double.parseDouble(args.get(2));
+                                    event = new PlotLineEvent(timestamp, yValue, style);
+                                }
+                                break;
+                            case "KV":
+                                if (args.size() >= 3) {
+                                    event = new PlotKeyValueEvent(timestamp, args.get(1), args.get(2));
+                                }
+                                break;
+                            case "MARKER":
+                                if (args.size() >= 3) {
+                                    event = new PlotTextAnnotationEvent(timestamp, args.get(2), args.get(1));
+                                }
+                                break;
+                            case "YLIMITS":
+                                if (args.size() >= 3) {
+                                    double minY = Double.parseDouble(args.get(1));
+                                    double maxY = Double.parseDouble(args.get(2));
+                                    event = new PlotYLimitsEvent(timestamp, maxY, minY);
+                                }
+                                break;
+                            case "YUNITS":
+                                if (args.size() >= 2) {
+                                    event = new PlotYUnitsEvent(timestamp, args.get(1));
+                                }
+                                break;
+                        }
+
+                        if (event != null) {
+                            processNewEvent(event); // Use the thread-safe helper to add data
+                        }
+
+                    } catch (NumberFormatException ex) {
+                        System.err.println("Skipping malformed line (number format error): " + storedLine);
+                    }
+                }
+
+            } catch (IOException ex) {
+                ex.printStackTrace();
+                System.err.println("Error loading plot data: " + ex.getMessage());
+            }
+
+            // After loading, disable auto-scroll and reset the view to fit the new data.
+            setAutoScrollEnabled(false);
+            resetViewToFitData();
+        });
+    }
+
+
+//    /**
+//     * Loads plot data from a file, replacing any existing data.
+//     * @param file The file to load data from.
+//     */
+//    public void loadPlotData(File file) {
+//        Platform.runLater(() -> {
+//            clearPlot();
+//
+//            // Regex for parsing lines with potentially quoted strings.
+//            // Group 1: The command (e.g., "KV", "MARKER")
+//            // Group 2: The rest of the line
+//            Pattern linePattern = Pattern.compile("^(\\S+)\\s(.*)$");
+//
+//            // Regex for parsing arguments, handles numbers and quoted strings
+//            Pattern argPattern = Pattern.compile("\"([^\"]*)\"|\\S+");
+//
+//            try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+//                String line;
+//                while ((line = reader.readLine()) != null) {
+//                    Matcher lineMatcher = linePattern.matcher(line.trim());
+//                    if (!lineMatcher.matches()) continue;
+//
+//                    String type = lineMatcher.group(1);
+//                    String argsStr = lineMatcher.group(2);
+//
+//                    Matcher argMatcher = argPattern.matcher(argsStr);
+//                    List<String> args = new ArrayList<>();
+//                    while (argMatcher.find()) {
+//                        // If group 1 is not null, it's a quoted string. Otherwise, it's an unquoted word.
+//                        args.add(argMatcher.group(1) != null ? argMatcher.group(1) : argMatcher.group());
+//                    }
+//
+//                    if (args.isEmpty()) continue;
+//
+//                    try {
+//                        long timestamp = Long.parseLong(args.get(0));
+//                        PlotDataEvent event = null;
+//
+//                        switch (type) {
+//                            case "POINT":
+//                                if (args.size() >= 3) {
+//                                    int style = Integer.parseInt(args.get(1));
+//                                    double yValue = Double.parseDouble(args.get(2));
+//                                    event = new PlotPointEvent(timestamp, yValue, style);
+//                                }
+//                                break;
+//                            case "LINE":
+//                                if (args.size() >= 3) {
+//                                    int style = Integer.parseInt(args.get(1));
+//                                    double yValue = Double.parseDouble(args.get(2));
+//                                    event = new PlotLineEvent(timestamp, yValue, style);
+//                                }
+//                                break;
+//                            case "KV":
+//                                if (args.size() >= 3) {
+//                                    event = new PlotKeyValueEvent(timestamp, args.get(1), args.get(2));
+//                                }
+//                                break;
+//                            case "MARKER":
+//                                if (args.size() >= 3) {
+//                                    event = new PlotTextAnnotationEvent(timestamp, args.get(2), args.get(1));
+//                                }
+//                                break;
+//                            case "YLIMITS":
+//                                if (args.size() >= 3) {
+//                                    double minY = Double.parseDouble(args.get(1));
+//                                    double maxY = Double.parseDouble(args.get(2));
+//                                    event = new PlotYLimitsEvent(timestamp, maxY, minY);
+//                                }
+//                                break;
+//                            case "YUNITS":
+//                                if (args.size() >= 2) {
+//                                    event = new PlotYUnitsEvent(timestamp, args.get(1));
+//                                }
+//                                break;
+//                        }
+//
+//                        if (event != null) {
+//                            processNewEvent(event); // Use the thread-safe helper to add data
+//                        }
+//
+//                    } catch (NumberFormatException ex) {
+//                        System.err.println("Skipping malformed line (number format error): " + line);
+//                    }
+//                }
+//
+//            } catch (IOException ex) {
+//                ex.printStackTrace();
+//                System.err.println("Error loading plot data: " + ex.getMessage());
+//            }
+//
+//            // After loading, disable auto-scroll and reset the view to fit the new data.
+//            setAutoScrollEnabled(false);
+//            resetViewToFitData();
+//
+////            // After loading, redraw everything and disable auto-scroll to keep the view static
+////            setAutoScrollEnabled(false);
+////            // Scroll to the beginning of the loaded data
+////            if (firstTimestamp != -1) {
+////                hScrollBar.setValue(0);
+////            }
+////            redrawFullPlot();
+//        });
+//    }
+
+    /**
+     * Resets and recalculates the plot's time boundaries and zoom level
+     * to ensure all current data fits within the visible viewport.
+     * This is essential after loading data from a file.
+     */
+    private void resetViewToFitData() {
+        if (plotEvents.isEmpty()) {
+            // If there's no data, just make sure we are reset
+            firstTimestamp = -1;
+            lastTimestamp = -1;
+            updateCanvasWidthAndScrollbar();
+            redrawFullPlot();
+            return;
+        }
+
+        // 1. Find the actual min and max timestamps from the loaded data
+        long minTs = Long.MAX_VALUE;
+        long maxTs = Long.MIN_VALUE;
+        synchronized(plotEvents) {
+            for(PlotDataEvent event : plotEvents) {
+                if (event.getTimestamp() < minTs) minTs = event.getTimestamp();
+                if (event.getTimestamp() > maxTs) maxTs = event.getTimestamp();
+            }
+        }
+        synchronized(keyValueStore) {
+            for (Map.Entry<String, List<TimestampedStringValue>> entry : keyValueStore.entrySet()) {
+                for (TimestampedStringValue val : entry.getValue()) {
+                    if (val.timestamp() < minTs) minTs = val.timestamp();
+                    if (val.timestamp() > maxTs) maxTs = val.timestamp();
+                }
+            }
+        }
+
+        if (minTs == Long.MAX_VALUE) { // No data found
+            firstTimestamp = -1;
+            lastTimestamp = -1;
+        } else {
+            firstTimestamp = minTs;
+            lastTimestamp = maxTs;
+        }
+
+        // 2. Calculate the optimal zoom level (pixelsPerMillisecond)
+        long totalDurationMs = lastTimestamp - firstTimestamp;
+        if (totalDurationMs > 0 && visibleGraphWidth > 0) {
+            // We give it a little padding (98%) so the last point isn't exactly at the edge
+            pixelsPerMillisecond = (visibleGraphWidth * 0.98) / totalDurationMs;
+        } else {
+            // Default zoom if there's only one point in time
+            pixelsPerMillisecond = 0.02; // Default 20 pixels/sec
+        }
+        pixelsPerMillisecond = MathUtil.clip(pixelsPerMillisecond, MIN_PIXELS_PER_MS, MAX_PIXELS_PER_MS);
+
+
+        // 3. Update scrollbar and redraw everything
+        updateCanvasWidthAndScrollbar();
+        // Ensure we are scrolled to the beginning
+        hScrollBar.setValue(0);
+        redrawFullPlot();
+    }
+
 }

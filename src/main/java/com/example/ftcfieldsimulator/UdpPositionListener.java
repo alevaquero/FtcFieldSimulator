@@ -52,6 +52,13 @@ public class UdpPositionListener implements Runnable {
         public TextData(String text) { this.text = text; }
     }
 
+    // Data for a key-value pair
+    public static class KeyValueData implements UdpMessageData {
+        public final String key;
+        public final String value;
+        public KeyValueData(String key, String value) { this.key = key; this.value = value; }
+    }
+
     // --- Listener Implementation ---
     private final int port;
     private volatile boolean isRunning = true;
@@ -148,6 +155,15 @@ public class UdpPositionListener implements Runnable {
             } else if (rawMessage.startsWith("txt:")) {
                 String content = rawMessage.substring(4); // 4 = length of "txt:"
                 return new TextData(content);
+            } else if (rawMessage.startsWith("kv:")) {
+                String content = rawMessage.substring(3); // 3 = length of "kv:"
+                String[] parts = content.split(",", 2); // Split only on the first comma
+                if (parts.length == 2) {
+                    return new KeyValueData(parts[0].trim(), parts[1].trim());
+                } else if (parts.length == 1) {
+                    // Handle case where value might be empty (e.g., "kv:MyKey,")
+                    return new KeyValueData(parts[0].trim(), "");
+                }
             } else {
                 System.err.println("Received unknown message format: " + rawMessage);
             }

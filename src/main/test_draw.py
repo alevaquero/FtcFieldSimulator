@@ -58,9 +58,25 @@ def test_text():
     message = f"txt:Hello from Robot! Val={random.randint(0,100)}"
     send_message(message)
 
+def test_kv():
+    """Sends a sample key-value message."""
+    keys = ["Robot Status", "Target Lock", "Alliance", "Battery Voltage"]
+    values = {
+        "Robot Status": ["Idle", "Scanning", "Moving", "Executing"],
+        "Target Lock": ["True", "False"],
+        "Alliance": ["BLUE", "RED"],
+        "Battery Voltage": [f"{round(random.uniform(11.8, 13.5), 2)}V"]
+    }
+    random_key = random.choice(keys)
+    random_value = random.choice(values[random_key])
+    message = f"kv:{random_key},{random_value}"
+    send_message(message)
+
 def run_sequence():
     """Runs a predefined sequence of commands with named, styled lines."""
     print("\n--- Running Predefined Sequence ---")
+    send_message("kv:Sequence,Starting")
+    send_message("kv:Alliance,BLUE")
     send_message("pos:0,0,0")
     time.sleep(0.5)
     send_message("line:target_vec_1,-30,-30,30,30,3")
@@ -70,6 +86,7 @@ def run_sequence():
     send_message("line:target_vec_1,30,-30,-30,30,2")
     time.sleep(1)
     send_message("txt:Sequence Started")
+    send_message("kv:Sub-task,Moving to Waypoint 1")
     time.sleep(1)
     send_message("pos:10,15,45")
     send_message("line:robot_to_poi,10,15,50,50,3")
@@ -79,6 +96,7 @@ def run_sequence():
     send_message("line:perm_line_A,-50,-50,50,50,1")
     time.sleep(0.5)
     send_message("line:perm_line_B,50,-50,-50,50,1")
+    send_message("kv:Sub-task,Moving to Waypoint 2")
     time.sleep(1)
     send_message("pos:-20,30,180")
     send_message("line:robot_to_poi,-20,30,-60,0,3")
@@ -86,6 +104,8 @@ def run_sequence():
     send_message("cir:15.0,270")
     time.sleep(0.5)
     send_message("txt:Sequence Complete!")
+    send_message("kv:Sequence,Finished")
+    send_message("kv:Sub-task,Idle")
     print("--- Sequence Complete ---")
 
 if __name__ == "__main__":
@@ -95,12 +115,14 @@ if __name__ == "__main__":
     print("  c                      - Send a random 'cir' message")
     print("  l                      - Send a random named, styled 'line' message")
     print("  t                      - Send a random 'txt' message")
+    print("  k                      - Send a random 'kv' (key-value) message")
     print("  s                      - Run a predefined sequence of commands")
     print("  pos:x,y,h              - Send specific position (e.g., pos:10.5,20.0,45)")
     print("  cir:rad,head           - Send specific circle (e.g., cir:15.5,45.0)")
     print("  line:name,x0,y0,x1,y1,style - Send specific named line (e.g., line:myline,0,0,30,30,1)")
     print("                           (style: 1=SolidThick, 2=SolidThin, 3=Dotted)")
     print("  txt:your message       - Send specific text (e.g., txt:Target Acquired)")
+    print("  kv:key,value           - Send specific key-value (e.g., kv:Mode,AUTO)")
     print("  q or quit              - Exit")
     print("-" * 30)
 
@@ -119,9 +141,11 @@ if __name__ == "__main__":
                 test_line()
             elif command_lower == 't':
                 test_text()
+            elif command_lower == 'k':
+                test_kv()
             elif command_lower == 's':
                 run_sequence()
-            elif command_lower.startswith(("pos:", "cir:", "line:", "txt:")): # Simplified check
+            elif command_lower.startswith(("pos:", "cir:", "line:", "txt:", "kv:")): # Simplified check
 
                 valid_format = True
                 # Safely split command_input to get the prefix and content
@@ -187,6 +211,18 @@ if __name__ == "__main__":
                         if not content_part.strip(): # Check if content after "txt:" is empty or just whitespace
                             print("Invalid 'txt' format: Message content is missing.")
                             valid_format = False
+                    elif prefix == "kv:":
+                        try:
+                            params = content_part.split(',', 1)
+                            if len(params) != 2:
+                                print("Invalid 'kv' format. Expected: kv:key,value")
+                                valid_format = False
+                            elif not params[0].strip():
+                                print("Invalid 'kv' format: Key cannot be empty.")
+                                valid_format = False
+                        except IndexError:
+                             print("Invalid 'kv' format. Expected: kv:key,value")
+                             valid_format = False
 
                 if valid_format:
                     send_message(command_input)

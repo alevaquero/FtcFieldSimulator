@@ -37,7 +37,6 @@ public class ControlPanel extends VBox {
     public static final String TEXTFIELD_VARIES_TEXT = "-- Varies --"; // +++ ADD
 
     // --- UI Elements ---
-    private Label xPosLabel, yPosLabel, headingLabel;
     private Button newPathButton, deletePathButton, exportPathButton, clearTrailButton, clearNamedLinesButton;
     private Button sendPathButton;
     private Button recordButton, playPauseButton, reverseButton, forwardButton;
@@ -215,18 +214,6 @@ public class ControlPanel extends VBox {
 //        VBox toolsControlsBox = new VBox(8, toolsTitle, showPlotButton);
         VBox toolsControlsBox = new VBox(8, showPlotButton);
 
-        // --- Robot Status Section ---
-        Label statusTitle = new Label("Robot Status");
-        Font valueFont = Font.font("Consolas", 14);
-        xPosLabel = createStatusLabel("X Position:", valueFont);
-        yPosLabel = createStatusLabel("Y Position:", valueFont);
-        headingLabel = createStatusLabel("Heading:", valueFont);
-        VBox statusInfoBox = new VBox(5);
-        statusInfoBox.setPadding(new Insets(5, 10, 10, 10));
-        statusInfoBox.setStyle("-fx-border-color: #B0BEC5; -fx-border-width: 1; -fx-border-radius: 5;");
-        statusInfoBox.getChildren().addAll(xPosLabel.getParent(), yPosLabel.getParent(), headingLabel.getParent());
-
-
         // --- Initial State ---
         enablePathControls(false); // New, Delete, Export, Send
         setPlaybackControlsDisabled(true); // Play, Pause, Fwd, Rev, Slider
@@ -234,24 +221,13 @@ public class ControlPanel extends VBox {
         setPointEditingControlsDisabled(true); // ComboBox and parameter TextFields
         loadGlobalDefaultsIntoParameterFields(); // Load defaults into TextFields on startup
 
-        this.getChildren().addAll(pathControlsBox, curveParamsBox, utilityControlsBox, recordingControlsBox, toolsControlsBox, statusInfoBox);
+        this.getChildren().addAll(pathControlsBox, curveParamsBox, utilityControlsBox, recordingControlsBox, toolsControlsBox);
     }
 
     private Button createMaxWidthButton(String text) {
         Button button = new Button(text);
         button.setMaxWidth(Double.MAX_VALUE);
         return button;
-    }
-
-    private Label createStatusLabel(String labelText, Font valueFont) {
-        Label label = new Label(labelText);
-        label.setStyle("-fx-text-fill: #37474F;");
-        Label valueLabel = new Label("0.0");
-        valueLabel.setFont(valueFont);
-        valueLabel.setStyle("-fx-text-fill: #000000;");
-        HBox hbox = new HBox(5, label, valueLabel);
-        hbox.setAlignment(Pos.CENTER_LEFT);
-        return valueLabel;
     }
 
     private void loadPlaybackIcons() {
@@ -286,12 +262,6 @@ public class ControlPanel extends VBox {
     public void setOnOpenAction(EventHandler<ActionEvent> handler) { openButton.setOnAction(handler); }
     public void setOnSaveAction(EventHandler<ActionEvent> handler) { saveButton.setOnAction(handler); }
     public void setSaveButtonDisabled(boolean isDisabled) { saveButton.setDisable(isDisabled); }
-
-    public void updateRobotStatus(double x, double y, double h) {
-        xPosLabel.setText(String.format(Locale.US, "%.2f", x));
-        yPosLabel.setText(String.format(Locale.US, "%.2f", y));
-        headingLabel.setText(String.format(Locale.US, "%.2f°", h));
-    }
 
     public void setOnNewPathAction(EventHandler<ActionEvent> handler) { newPathButton.setOnAction(handler); }
     public void setOnDeletePathAction(EventHandler<ActionEvent> handler) { deletePathButton.setOnAction(handler); }
