@@ -47,7 +47,7 @@ public class FieldDisplay extends Pane {
 
     // robotTrailDots stores points in CANVAS PIXEL coordinates
     private List<Point2D> robotTrailDots;
-    private static final int MAX_TRAIL_DOTS = 1000;
+    private static final int MAX_TRAIL_DOTS = 5000;
     private static final double TRAIL_DOT_RADIUS_PIXELS = 4.0;
 
     public enum LineStyle {
