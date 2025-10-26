@@ -18,8 +18,7 @@ public class UdpClientPlot {
     private int port;
     private boolean initialized = false;
 
-    private static final String DEFAULT_SIMULATOR_IP = "127.0.0.1"; // Default for simulator on the same PC
-    // Change if simulator is on a different machine
+    private static final String DEFAULT_SIMULATOR_IP = "127.0.0.1";
 
     /**
      * Constructor for UdpClientPlot.
@@ -28,30 +27,29 @@ public class UdpClientPlot {
      */
     public UdpClientPlot(String host, int port) {
         try {
-            this.socket = new DatagramSocket(); // Socket for sending, binds to any available local port
+            this.socket = new DatagramSocket();
             this.address = InetAddress.getByName(host);
             this.port = port;
             this.initialized = true;
             System.out.println("UdpClientPlot initialized to send to " + host + ":" + port);
         } catch (Exception e) {
-            // In FTC robot code, use Telemetry or System.out for errors if OpMode context is available
             System.err.println("UdpClientPlot: Failed to initialize UDP client for " + host + ":" + port + " - " + e.getMessage());
-            // e.printStackTrace(); // Avoid printStackTrace in tight loops on robot
             this.initialized = false;
         }
     }
 
     /**
-     * Default constructor. Attempts to connect to the simulator on localhost
-     * using the default plot listener port.
+     * Default constructor. Attempts to connect to the simulator on localhost.
+     * NOTE: Requires a known port, so you should specify it.
+     * This constructor is less ideal now; use the one with host and port.
      */
     public UdpClientPlot() {
-        this(DEFAULT_SIMULATOR_IP, UdpPlotListener.DEFAULT_PLOT_LISTENER_PORT);
+        // This port needs to be known. Assuming a default if not specified.
+        this(DEFAULT_SIMULATOR_IP, 7778); // Example default port
     }
 
     private void sendMessage(String message) {
         if (!initialized || socket == null || socket.isClosed()) {
-            // System.err.println("UdpClientPlot: Not initialized or socket closed. Cannot send: " + message);
             return;
         }
         try {
@@ -60,144 +58,159 @@ public class UdpClientPlot {
             socket.send(packet);
         } catch (IOException e) {
             System.err.println("UdpClientPlot: IOException sending message '" + message + "': " + e.getMessage());
-            // Consider more robust error handling for robot code (e.g., rate limiting error prints)
         } catch (Exception e) {
-            // Catch other potential runtime exceptions during send
             System.err.println("UdpClientPlot: Exception sending message '" + message + "': " + e.getMessage());
         }
     }
 
+    // --- Primary Y-Axis (Left) Methods ---
+
     /**
-     * Sends a Y-value data point to be plotted.
-     * @param timestamp The timestamp of the data point (e.g., from an OpMode's runtime timer or System.currentTimeMillis()).
-     * @param yValue The Y-value to plot.
-     * @param style The style code for the point (typically 1-5).
+     * Sends a discrete data point to be plotted on the primary (left) Y-axis.
      */
     public void sendPointY(long timestamp, double yValue, int style) {
-        // Format: <timestamp>,point_y:<y_value>,<style>
-        String message = String.format(Locale.US, "%d,point_y:%.3f,%d",
-                timestamp, yValue, style);
+        String message = String.format(Locale.US, "POINT %d %d %.6f",
+                timestamp, style, yValue);
         sendMessage(message);
     }
 
     /**
-     * Sends a Y-value to draw a line segment to. The line is drawn from the previous
-     * point of the same style to this new point.
-     * @param timestamp The timestamp of this line point.
-     * @param yValue The Y-value of this line point.
-     * @param style The style code for the line (typically 1-10).
+     * Sends a data point for a line series on the primary (left) Y-axis.
      */
     public void sendLineY(long timestamp, double yValue, int style) {
-        // Format: <timestamp>,line_y:<y_value>,<style>
-        String message = String.format(Locale.US, "%d,line_y:%.3f,%d",
-                timestamp, yValue, style);
+        String message = String.format(Locale.US, "LINE %d %d %.6f",
+                timestamp, style, yValue);
         sendMessage(message);
     }
 
     /**
-     * Sends a text annotation to be displayed as a vertical marker on the plot.
-     * @param timestamp The timestamp where the vertical marker line should appear.
-     * @param text The text to display. If it contains commas, consider quoting or use a format that the listener can handle.
-     * @param positionKeyword "top", "mid", or "bot" to indicate text vertical position relative to the plot area.
-     */
-    public void sendTextMarker(long timestamp, String text, String positionKeyword) {
-        // Format: <timestamp>,text:<text_string>,<position_keyword>
-        // Ensure text doesn't break parsing if it has unescaped commas and the listener isn't robust.
-        // For simplicity, assuming text won't conflict with the final comma for positionKeyword.
-        // If text can have commas, the Python sender wraps it in quotes. The Java listener handles this.
-        // Here, we'll just send it raw. If the user puts quotes in the text string, they will be sent.
-        String message = String.format(Locale.US, "%d,text:%s,%s",
-                timestamp, text, positionKeyword.toLowerCase(Locale.US));
-        sendMessage(message);
-    }
-
-    /**
-     * Sets the Y-axis limits for the plot.
-     * @param timestamp A timestamp for associating this command (can be current time).
-     * @param maxY The maximum value for the Y-axis.
-     * @param minY The minimum value for the Y-axis.
+     * Sets the Y-axis limits for the primary (left) axis.
      */
     public void sendYLimits(long timestamp, double maxY, double minY) {
-        // Format: <timestamp>,set_y_limits:<max_y>,<min_y>
-        String message = String.format(Locale.US, "%d,set_y_limits:%.2f,%.2f",
-                timestamp, maxY, minY);
+        String message = String.format(Locale.US, "YLIMITS %d %.6f %.6f",
+                timestamp, minY, maxY); // Note: Swapped to minY, maxY to match PlotDisplay loader
         sendMessage(message);
     }
 
     /**
-     * Sets the unit label for the Y-axis.
-     * @param timestamp A timestamp for associating this command (can be current time).
-     * @param unitString The string to display as the Y-axis unit (e.g., "Volts", "Degrees").
+     * Sets the unit label for the primary (left) Y-axis.
      */
     public void sendYUnits(long timestamp, String unitString) {
-        // Format: <timestamp>,set_y_units:<unit_string>
-        String message = String.format(Locale.US, "%d,set_y_units:%s",
+        String message = String.format(Locale.US, "YUNITS %d \"%s\"",
                 timestamp, unitString);
         sendMessage(message);
     }
 
+
+    // --- NEW: Secondary Y-Axis (Right) Methods ---
+
     /**
-     * Sends a key-value pair to be displayed in the telemetry/data table area of the plot window.
-     * @param timestamp The timestamp associated with this key-value update.
-     * @param key The key string.
-     * @param value The value string.
+     * Sends a discrete data point to be plotted on the secondary (right) Y-axis.
      */
-    public void sendKeyValue(long timestamp, String key, String value) {
-        // Format: <timestamp>,key_value:<key_string>,<value_string>
-        // Ensure key/value don't contain commas that would break basic parsing on the listener if it's simple.
-        // Assuming the listener's key_value parser splits only on the first comma after "key_value:".
-        String message = String.format(Locale.US, "%d,key_value:%s,%s",
-                timestamp, key, value);
+    public void sendPointY2(long timestamp, double yValue, int style) {
+        String message = String.format(Locale.US, "POINT2 %d %d %.6f",
+                timestamp, style, yValue);
         sendMessage(message);
     }
 
     /**
-     * Checks if the client was initialized successfully.
-     * @return true if initialized, false otherwise.
+     * Sends a data point for a line series on the secondary (right) Y-axis.
      */
+    public void sendLineY2(long timestamp, double yValue, int style) {
+        String message = String.format(Locale.US, "LINE2 %d %d %.6f",
+                timestamp, style, yValue);
+        sendMessage(message);
+    }
+
+    /**
+     * Sets the Y-axis limits for the secondary (right) axis.
+     */
+    public void sendYLimits2(long timestamp, double maxY, double minY) {
+        String message = String.format(Locale.US, "YLIMITS2 %d %.6f %.6f",
+                timestamp, minY, maxY);
+        sendMessage(message);
+    }
+
+    /**
+     * Sets the unit label for the secondary (right) Y-axis.
+     */
+    public void sendYUnits2(long timestamp, String unitString) {
+        String message = String.format(Locale.US, "YUNITS2 %d \"%s\"",
+                timestamp, unitString);
+        sendMessage(message);
+    }
+
+
+    // --- Shared Methods (Unaffected by multiple axes) ---
+
+    /**
+     * Sends a text annotation to be displayed as a vertical marker on the plot.
+     */
+    public void sendTextMarker(long timestamp, String text, String positionKeyword) {
+        String message = String.format(Locale.US, "MARKER %d %s \"%s\"",
+                timestamp, positionKeyword.toLowerCase(Locale.US), text);
+        sendMessage(message);
+    }
+
+    /**
+     * Sends a key-value pair to be displayed in the data table.
+     */
+    public void sendKeyValue(long timestamp, String key, String value) {
+        String message = String.format(Locale.US, "KV %d \"%s\" \"%s\"",
+                timestamp, key, value);
+        sendMessage(message);
+    }
+
+
+    // --- Client Management ---
+
     public boolean isInitialized() {
         return initialized;
     }
 
-    /**
-     * Closes the socket. This should be called when the UdpClientPlot is no longer needed,
-     * for example, at the end of an OpMode.
-     */
     public void close() {
         if (socket != null && !socket.isClosed()) {
             socket.close();
             System.out.println("UdpClientPlot socket closed.");
         }
-        initialized = false; // Mark as not usable anymore
+        initialized = false;
     }
 
     // Optional: A main method for quick testing from a non-robot environment
-    // public static void main(String[] args) {
-    //     UdpClientPlot plotClient = new UdpClientPlot();
-    //     if (!plotClient.isInitialized()) {
-    //         System.err.println("Plot client failed to initialize. Exiting test.");
-    //         return;
-    //     }
-    //     long startTime = System.currentTimeMillis();
-    //     plotClient.sendYUnits(System.currentTimeMillis() - startTime, "Test Units");
-    //     plotClient.sendYLimits(System.currentTimeMillis() - startTime, 100, 0);
-    //
-    //     for (int i = 0; i < 50; i++) {
-    //         long time = System.currentTimeMillis() - startTime;
-    //         double yVal = 50 + 40 * Math.sin(i * 0.2);
-    //         if (i % 2 == 0) {
-    //             plotClient.sendPointY(time, yVal, (i % 5) + 1);
-    //         } else {
-    //             plotClient.sendLineY(time, yVal, (i % 10) + 1);
-    //         }
-    //         if (i % 10 == 0) {
-    //             plotClient.sendTextMarker(time, "Event " + i, "mid");
-    //             plotClient.sendKeyValue(time, "Loop", String.valueOf(i));
-    //         }
-    //         try { Thread.sleep(100); } catch (InterruptedException e) { break; }
-    //     }
-    //     plotClient.sendKeyValue(System.currentTimeMillis() - startTime, "Status", "Test Complete");
-    //     plotClient.close();
-    // }
-}
+    public static void main(String[] args) {
+        // Test sending to a specific port
+        UdpClientPlot plotClient = new UdpClientPlot("127.0.0.1", 7778);
+        if (!plotClient.isInitialized()) {
+            System.err.println("Plot client failed to initialize. Exiting test.");
+            return;
+        }
+        long startTime = System.currentTimeMillis();
 
+        // --- Setup both Y-Axes ---
+        plotClient.sendYUnits(System.currentTimeMillis() - startTime, "RPM");
+        plotClient.sendYLimits(System.currentTimeMillis() - startTime, 6000, 0);
+
+        plotClient.sendYUnits2(System.currentTimeMillis() - startTime, "Power");
+        plotClient.sendYLimits2(System.currentTimeMillis() - startTime, 1.0, -1.0);
+
+
+        for (int i = 0; i < 100; i++) {
+            long time = System.currentTimeMillis() - startTime;
+            // Data for Left Y-Axis (RPM)
+            double rpmValue = 3000 + 2500 * Math.sin(i * 0.1);
+            plotClient.sendLineY(time, rpmValue, 1); // Style 1 for RPM
+
+            // Data for Right Y-Axis (Power)
+            double powerValue = 0.7 * Math.cos(i * 0.1);
+            plotClient.sendLineY2(time, powerValue, 2); // Style 2 for Power
+
+            if (i % 20 == 0) {
+                plotClient.sendTextMarker(time, "Event " + i, "mid");
+                plotClient.sendKeyValue(time, "Loop", String.valueOf(i));
+            }
+            try { Thread.sleep(50); } catch (InterruptedException e) { break; }
+        }
+        plotClient.sendKeyValue(System.currentTimeMillis() - startTime, "Status", "Test Complete");
+        plotClient.close();
+    }
+}

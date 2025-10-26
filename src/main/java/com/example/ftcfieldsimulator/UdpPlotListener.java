@@ -1,22 +1,26 @@
 // Create this file: UdpPlotListener.java
 package com.example.ftcfieldsimulator;
 
+import javafx.application.Platform;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
-import java.util.Locale;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class UdpPlotListener implements Runnable {
 
-    public static final int DEFAULT_PLOT_LISTENER_PORT = 7778; // New port for plot data
+    public static final int DEFAULT_PLOT_LISTENER_PORT = 7778;
 
     private final int port;
     private volatile boolean running = true;
     private DatagramSocket socket;
-    private final Consumer<PlotDataEvent> eventConsumer; // Will pass parsed PlotDataEvent objects
+    private final Consumer<PlotDataEvent> eventConsumer;
 
     public UdpPlotListener(int port, Consumer<PlotDataEvent> eventConsumer) throws SocketException {
         this.port = port;
@@ -39,7 +43,7 @@ public class UdpPlotListener implements Runnable {
 
     @Override
     public void run() {
-        byte[] buffer = new byte[1024]; // Buffer for incoming data
+        byte[] buffer = new byte[1024];
         DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
         System.out.println("UDP Plot Listener started on port " + port + " and waiting for messages...");
 
@@ -47,131 +51,107 @@ public class UdpPlotListener implements Runnable {
             try {
                 socket.receive(packet);
                 String received = new String(packet.getData(), 0, packet.getLength(), StandardCharsets.UTF_8);
-                // System.out.println("Plot UDP Received: " + received); // For debugging
                 parseAndConsume(received);
             } catch (SocketException se) {
                 if (!running) { // Expected exception when stopping
                     System.out.println("UDP Plot Listener socket closed (expected during stop).");
                 } else {
                     System.err.println("UDP Plot Listener SocketException: " + se.getMessage());
-                    running = false; // Stop if unexpected socket error
+                    running = false;
                 }
             } catch (IOException e) {
-                if (running) {
-                    System.err.println("UDP Plot Listener IOException: " + e.getMessage());
-                    // Decide if this is fatal, or if we should try to continue
-                }
-            } catch (Exception e) { // Catch other parsing errors
+                if (running) System.err.println("UDP Plot Listener IOException: " + e.getMessage());
+            } catch (Exception e) {
                 System.err.println("Error processing UDP plot message: '" + new String(packet.getData(), 0, packet.getLength()) + "'. Error: " + e.getMessage());
             }
-        }
-        if (socket != null && !socket.isClosed()) {
-            socket.close();
         }
         System.out.println("UDP Plot Listener thread finished.");
     }
 
+    /**
+     * Parses messages in the space-delimited format (e.g., "LINE 12345 1 50.0").
+     * This parser is robust and handles quoted strings for text arguments.
+     */
     private void parseAndConsume(String message) {
-        if (message == null || message.trim().isEmpty()) {
+        if (message == null || message.trim().isEmpty()) return;
+
+        // Regex to find the first word (the command)
+        Pattern commandPattern = Pattern.compile("^(\\S+)\\s(.*)$");
+        // Regex to find subsequent arguments, respecting quoted strings
+        Pattern argsPattern = Pattern.compile("\"([^\"]*)\"|\\S+");
+
+        Matcher commandMatcher = commandPattern.matcher(message.trim());
+        if (!commandMatcher.matches()) {
+            System.err.println("Malformed plot message (no command/args): " + message);
+            return;
+        }
+
+        String type = commandMatcher.group(1).toUpperCase();
+        String argsStr = commandMatcher.group(2);
+
+        Matcher argsMatcher = argsPattern.matcher(argsStr);
+        List<String> args = new ArrayList<>();
+        while (argsMatcher.find()) {
+            // If group 1 is not null, it's a quoted string. Otherwise, it's a regular word.
+            args.add(argsMatcher.group(1) != null ? argsMatcher.group(1) : argsMatcher.group());
+        }
+
+        if (args.isEmpty()) {
+            System.err.println("Malformed plot message (command only, no timestamp): " + message);
             return;
         }
 
         try {
-            String[] parts = message.split(",", 2); // Split timestamp from the rest
-            if (parts.length < 2) {
-                System.err.println("Malformed plot message (missing timestamp comma): " + message);
-                return;
+            long timestamp = Long.parseLong(args.get(0));
+            PlotDataEvent event = null;
+
+            switch (type) {
+                case "POINT":
+                    if (args.size() >= 3) event = new PlotPointEvent(timestamp, Double.parseDouble(args.get(2)), Integer.parseInt(args.get(1)));
+                    break;
+                case "LINE":
+                    if (args.size() >= 3) event = new PlotLineEvent(timestamp, Double.parseDouble(args.get(2)), Integer.parseInt(args.get(1)));
+                    break;
+                case "POINT2":
+                    if (args.size() >= 3) event = new PlotPoint2Event(timestamp, Double.parseDouble(args.get(2)), Integer.parseInt(args.get(1)));
+                    break;
+                case "LINE2":
+                    if (args.size() >= 3) event = new PlotLine2Event(timestamp, Double.parseDouble(args.get(2)), Integer.parseInt(args.get(1)));
+                    break;
+                case "KV":
+                    if (args.size() >= 3) event = new PlotKeyValueEvent(timestamp, args.get(1), args.get(2));
+                    break;
+                case "MARKER":
+                    if (args.size() >= 3) event = new PlotTextAnnotationEvent(timestamp, args.get(2), args.get(1));
+                    break;
+                case "YLIMITS":
+                    // Format: YLIMITS ts min max
+                    if (args.size() >= 3) event = new PlotYLimitsEvent(timestamp, Double.parseDouble(args.get(2)), Double.parseDouble(args.get(1)));
+                    break;
+                case "YUNITS":
+                    if (args.size() >= 2) event = new PlotYUnitsEvent(timestamp, args.get(1));
+                    break;
+                case "YLIMITS2":
+                    if (args.size() >= 3) event = new PlotYLimits2Event(timestamp, Double.parseDouble(args.get(2)), Double.parseDouble(args.get(1)));
+                    break;
+                case "YUNITS2":
+                    if (args.size() >= 2) event = new PlotYUnits2Event(timestamp, args.get(1));
+                    break;
+                default:
+                    System.err.println("Unknown plot command: " + type);
             }
 
-            long timestamp = Long.parseLong(parts[0].trim());
-            String commandAndArgs = parts[1].trim();
-
-            if (commandAndArgs.startsWith("point_y:")) {
-                String argsStr = commandAndArgs.substring("point_y:".length()).trim();
-                String[] args = argsStr.split(",");
-                if (args.length == 2) {
-                    double y = Double.parseDouble(args[0].trim());
-                    int style = Integer.parseInt(args[1].trim());
-                    eventConsumer.accept(new PlotPointEvent(timestamp, y, style));
-                } else {
-                    System.err.println("Malformed point_y message: " + commandAndArgs);
-                }
-            } else if (commandAndArgs.startsWith("line_y:")) { // +++ NEW +++
-                String argsStr = commandAndArgs.substring("line_y:".length()).trim();
-                String[] args = argsStr.split(",");
-                if (args.length == 2) {
-                    double y = Double.parseDouble(args[0].trim());
-                    int style = Integer.parseInt(args[1].trim());
-                    eventConsumer.accept(new PlotLineEvent(timestamp, y, style));
-                } else {
-                    System.err.println("Malformed line_y message: " + commandAndArgs);
-                }
-            } else if (commandAndArgs.startsWith("text:")) { // +++ REVISED FOR NEW REQUIREMENT +++
-                // Expected format for commandAndArgs: "text:<text_string>,<position_keyword>"
-                String argsStr = commandAndArgs.substring("text:".length());
-
-                // Text string might contain commas if quoted, or not if unquoted and simple.
-                // For this format, the last argument is always the position_keyword.
-                int lastCommaIndex = argsStr.lastIndexOf(',');
-                if (lastCommaIndex == -1 || lastCommaIndex == 0) { // No comma or comma at the very beginning
-                    System.err.println("Malformed text message (missing comma for position keyword): " + commandAndArgs);
-                    return;
-                }
-
-                String textString = argsStr.substring(0, lastCommaIndex).trim(); // Text is everything before the last comma
-                String positionKeyword = argsStr.substring(lastCommaIndex + 1).trim().toLowerCase();
-
-                // Optional: Remove quotes from textString if present
-                if (textString.startsWith("\"") && textString.endsWith("\"") && textString.length() >= 2) {
-                    textString = textString.substring(1, textString.length() - 1);
-                }
-
-                if (!positionKeyword.equals("top") && !positionKeyword.equals("mid") && !positionKeyword.equals("bot")) {
-                    System.err.println("Invalid position keyword for text message: '" + positionKeyword + "'. Defaulting to 'mid'.");
-                    positionKeyword = "mid";
-                }
-
-                eventConsumer.accept(new PlotTextAnnotationEvent(timestamp, textString, positionKeyword));
-
-            }  else if (commandAndArgs.startsWith("set_y_limits:")) { // +++ NEW +++
-                String argsStr = commandAndArgs.substring("set_y_limits:".length()).trim();
-                String[] args = argsStr.split(",");
-                if (args.length == 2) {
-                    double maxY = Double.parseDouble(args[0].trim());
-                    double minY = Double.parseDouble(args[1].trim());
-                    if (maxY <= minY) {
-                        System.err.println("Invalid Y limits: max_y must be greater than min_y. Received: " + commandAndArgs);
-                        return;
-                    }
-                    eventConsumer.accept(new PlotYLimitsEvent(timestamp, maxY, minY));
-                } else {
-                    System.err.println("Malformed set_y_limits message: " + commandAndArgs);
-                }
-            } else if (commandAndArgs.startsWith("set_y_units:")) { // +++ NEW +++
-                String unitStr = commandAndArgs.substring("set_y_units:".length()).trim();
-                // Assuming unit string does not contain commas, or is the only argument
-                eventConsumer.accept(new PlotYUnitsEvent(timestamp, unitStr));
-            } else if (commandAndArgs.startsWith("key_value:")) {
-                String argsStr = commandAndArgs.substring("key_value:".length());
-                // Expecting <key_string>,<value_string>
-                // Key string or value string could theoretically contain commas if we were to support
-                // quoted strings, but for simplicity now, assume they don't or the first comma is the delimiter.
-                int firstCommaIndex = argsStr.indexOf(',');
-                if (firstCommaIndex != -1 && firstCommaIndex > 0 && firstCommaIndex < argsStr.length() - 1) {
-                    String key = argsStr.substring(0, firstCommaIndex).trim();
-                    String value = argsStr.substring(firstCommaIndex + 1).trim();
-                    eventConsumer.accept(new PlotKeyValueEvent(timestamp, key, value));
-                } else {
-                    System.err.println("Malformed key_value message: " + commandAndArgs);
-                }
+            if (event != null) {
+                // Pass the created event to the consumer (PlotDisplay) on the JavaFX thread
+                final PlotDataEvent finalEvent = event;
+                Platform.runLater(() -> eventConsumer.accept(finalEvent));
             } else {
-                System.out.println("Unknown plot command: " + commandAndArgs);
+                System.err.println("Malformed plot message (incorrect arg count for " + type + "): " + message);
             }
-        } catch (NumberFormatException e) {
-            System.err.println("Error parsing number in plot message '" + message + "': " + e.getMessage());
-        } catch (Exception e) {
-            System.err.println("Generic error parsing plot message '" + message + "': " + e.getMessage());
-            e.printStackTrace(); // For more detail during development
+        } catch (NumberFormatException ex) {
+            System.err.println("Malformed plot message (number format error): " + message);
+        } catch (Exception ex) {
+            System.err.println("Generic error parsing plot message '" + message + "': " + ex.getMessage());
         }
     }
 }
