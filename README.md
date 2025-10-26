@@ -44,14 +44,16 @@ Your robot code sends small messages (UDP packets) over the Wi-Fi network to the
 |               |                 |      |  |  +--------------+  +-------------+ | |
 +---------------|-----------------+      |  |         ^                ^         | |
                 |                        |  +---------|----------------|---------+ |
-                |                        |            |                |
-    UDP Messages over Wi-Fi              |            |                |
-                |                        +------------------------+------------+----------------+
-                |                                     |
-                +-------------------------+           +-------------------------+
-                                          |
-    "POS 12.3 45.6 90.0"       "LINE 166... 5021.5 2"     "LINE2 166... 1.25 3"
- (Field Position Update)       (Plot RPM on Left Axis)    (Plot Amps on Right Axis)
+                |                        |            |                |           |
+    UDP Messages over Wi-Fi              |            |                |           |
+                |                        +-----------------------------------------+
+                |                                     |                |
+                +-------------------------------------+                |
+    "POS 12.3 45.6 90.0"                                               |
+  (Field Position Update)                                              |
+                                                                       |
+                                     "LINE 166... 5021.5 2"  "LINE2 166... 1.25 3"
+                                     (Plot RPM on Left Axis) (Plot Amps on Right Axis)
 ```
 ## How to Use It
 
