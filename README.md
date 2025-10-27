@@ -17,7 +17,7 @@ This guide will focus on how to send data from your FTC robot code to the simula
 
 This view shows your robot's position on the field, along with a live table of key-value data you send from the robot.
 
-![Screenshot of the main field view with the robot and data table](field.png)
+![Screenshot of the main field view with the robot and data table](robot_record.gif)
 
 #### Live Data Plotter
 
