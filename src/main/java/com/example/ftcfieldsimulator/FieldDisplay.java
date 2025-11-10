@@ -430,23 +430,6 @@ public class FieldDisplay extends Pane {
             // gc.strokeOval(canvasX - highlightRadius, canvasY - highlightRadius, highlightRadius * 2, highlightRadius * 2); // Optional border
         }
 
-//        // Draw the path being created/displayed
-//        if (currentPathToDraw != null && !currentPathToDraw.isEmpty()) {
-//            gc.setStroke(isPathCreationMode ? Color.CYAN : Color.MAGENTA);
-//            gc.setLineWidth(2);
-//            for (int i = 0; i < currentPathToDraw.size() - 1; i++) {
-//                Position p1 = currentPathToDraw.get(i);
-//                Position p2 = currentPathToDraw.get(i + 1);
-//                gc.strokeLine(fieldYtoCanvasX(p1.y), fieldXtoCanvasY(p1.x), fieldYtoCanvasX(p2.y), fieldXtoCanvasY(p2.x));
-//            }
-//            gc.setFill(Color.RED);
-//            for (Position p : currentPathToDraw) {
-//                double canvasX = fieldYtoCanvasX(p.y);
-//                double canvasY = fieldXtoCanvasY(p.x);
-//                gc.fillOval(canvasX - 4, canvasY - 4, 8, 8);
-//            }
-//        }
-
         // Draw Robot Image
         double robotCanvasPixelX = 0; // robot's center X on canvas (horizontal)
         double robotCanvasPixelY = 0; // robot's center Y on canvas (vertical)
@@ -588,7 +571,9 @@ public class FieldDisplay extends Pane {
 
                 // 3. Draw the heading line from the center to the edge
                 // It will automatically use the same stroke color and width set above
-                double headingRad_Canvas = Math.toRadians(90 - currentDebugCircle.headingDegrees);
+//                double headingRad_Canvas = Math.toRadians(90 - currentDebugCircle.headingDegrees);
+                double headingRad_Canvas = Math.toRadians(90 + currentDebugCircle.headingDegrees);
+
                 gc.strokeLine(
                         canvasX, // from center X
                         canvasY, // from center Y

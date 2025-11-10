@@ -57,6 +57,18 @@ public class Robot {
         this.yInches = yInches;
     }
 
+    /**
+     * Sets the robot's position and heading in one call.
+     * @param xInches The new X coordinate on the field.
+     * @param yInches The new Y coordinate on the field.
+     * @param headingDegrees The new heading in degrees.
+     */
+    public void setPosition(double xInches, double yInches, double headingDegrees) {
+        this.xInches = xInches;
+        this.yInches = yInches;
+        this.headingDegrees = headingDegrees;
+    }
+
     public void setHeading(double headingDegrees) {
         this.headingDegrees = headingDegrees;
     }
