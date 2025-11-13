@@ -30,7 +30,7 @@ public class ControlPanel extends VBox {
     public static final String TEXTFIELD_VARIES_TEXT = "-- Varies --";
 
     // --- UI Elements ---
-    private Button newPathButton, deletePathButton, exportPathButton, clearTrailButton, clearNamedLinesButton;
+    private Button newPathButton, deletePathButton, exportPathButton, exportCodeButton, clearTrailButton, clearNamedLinesButton;
     private Button sendPathButton;
     private Button recordButton, playPauseButton, reverseButton, forwardButton;
     private Button openButton, saveButton;
@@ -79,9 +79,15 @@ public class ControlPanel extends VBox {
         pathTitle.setFont(titleFont);
         newPathButton = createMaxWidthButton("New Path");
         deletePathButton = createMaxWidthButton("Delete Path");
-        exportPathButton = createMaxWidthButton("Export Path (CSV)");
+        exportPathButton = createMaxWidthButton("Export CSV");
+        exportCodeButton = createMaxWidthButton("Export Code");
         sendPathButton = createMaxWidthButton("Send Path to Robot");
-        VBox pathControlsBox = new VBox(sectionSpacing, pathTitle, newPathButton, deletePathButton, exportPathButton, sendPathButton);
+        // Create an HBox for the export buttons
+        HBox exportBox = new HBox(5, exportPathButton, exportCodeButton);
+        HBox.setHgrow(exportPathButton, Priority.ALWAYS);
+        HBox.setHgrow(exportCodeButton, Priority.ALWAYS);
+
+        VBox pathControlsBox = new VBox(sectionSpacing, pathTitle, newPathButton, deletePathButton, exportBox, sendPathButton);
 
 
         // --- Robot Start Position Section ---
@@ -302,6 +308,7 @@ public class ControlPanel extends VBox {
     public void setOnNewPathAction(EventHandler<ActionEvent> handler) { newPathButton.setOnAction(handler); }
     public void setOnDeletePathAction(EventHandler<ActionEvent> handler) { deletePathButton.setOnAction(handler); }
     public void setOnExportPathAction(EventHandler<ActionEvent> handler) { exportPathButton.setOnAction(handler); }
+    public void setOnExportCodeAction(EventHandler<ActionEvent> handler) { exportCodeButton.setOnAction(handler); }
     public void setOnSendPathAction(EventHandler<ActionEvent> handler) { if (sendPathButton != null) { sendPathButton.setOnAction(handler); } }
     public void setOnClearTrailAction(EventHandler<ActionEvent> handler) { clearTrailButton.setOnAction(handler); }
     public void setOnClearNamedLinesAction(EventHandler<ActionEvent> handler) { clearNamedLinesButton.setOnAction(handler); }
@@ -320,6 +327,7 @@ public class ControlPanel extends VBox {
         newPathButton.setDisable(isActive);
         deletePathButton.setDisable(isActive || deletePathButton.isDisabled());
         exportPathButton.setDisable(isActive || exportPathButton.isDisabled());
+        exportCodeButton.setDisable(isActive || exportCodeButton.isDisabled());
         if (sendPathButton != null) {
             sendPathButton.setDisable(isActive || sendPathButton.isDisabled());
         }
@@ -329,6 +337,7 @@ public class ControlPanel extends VBox {
         boolean pathEditingMode = newPathButton.isDisabled();
         deletePathButton.setDisable(!pathExists || pathEditingMode);
         exportPathButton.setDisable(!pathExists || pathEditingMode);
+        exportCodeButton.setDisable(!pathExists || pathEditingMode);
         if (sendPathButton != null) {
             sendPathButton.setDisable(!pathExists || pathEditingMode);
         }
@@ -445,439 +454,3 @@ public class ControlPanel extends VBox {
     public double getSlowDownTurnAmountParam() throws NumberFormatException { return Double.parseDouble(slowDownTurnAmountField.getText()); }
 }
 
-
-//package com.example.ftcfieldsimulator;
-//
-//import javafx.beans.value.ChangeListener;
-//import javafx.collections.FXCollections;
-//import javafx.event.ActionEvent;
-//import javafx.event.EventHandler;
-//import javafx.geometry.Insets;
-//import javafx.geometry.Pos;
-//import javafx.scene.control.*;
-//import javafx.scene.image.Image;
-//import javafx.scene.image.ImageView;
-//import javafx.scene.input.MouseEvent;
-//import javafx.scene.layout.ColumnConstraints;
-//import javafx.scene.layout.GridPane;
-//import javafx.scene.layout.HBox;
-//import javafx.scene.layout.Priority;
-//import javafx.scene.layout.VBox;
-//import javafx.scene.text.Font;
-//import javafx.scene.text.FontWeight;
-//import javafx.util.Callback;
-//
-//import java.util.ArrayList;
-//import java.util.Arrays;
-//import java.util.List;
-//import java.util.Locale;
-//
-//public class ControlPanel extends VBox {
-//    public static final double PREFERRED_WIDTH_RATIO_TO_FIELD = 1.0 / 3.0;
-//    public static final String ALL_POINTS_MARKER = "ALL Points";
-//    public static final String TEXTFIELD_VARIES_TEXT = "-- Varies --";
-//
-//    // --- UI Elements ---
-//    private Button newPathButton, deletePathButton, exportPathButton, clearTrailButton, clearNamedLinesButton;
-//    private Button sendPathButton;
-//    private Button recordButton, playPauseButton, reverseButton, forwardButton;
-//    private Button openButton, saveButton;
-//    private ImageView recordIcon, stopIcon, playIcon, pauseIcon, reverseIcon, forwardIcon;
-//    private Slider timelineSlider;
-//    private Button showPlotButton;
-//
-//    // --- Robot Start Position UI Elements ---
-//    private TextField startXField;
-//    private TextField startYField;
-//    private TextField startHeadingField;
-//    private List<TextField> robotStartTextFieldsList;
-//
-//    // --- Path Point Parameter UI Elements ---
-//    private ComboBox<Object> pointSelectionComboBox;
-//    private TextField moveSpeedField, turnSpeedField, followDistanceField, pointLengthField, slowDownTurnDegreesField, slowDownTurnAmountField;
-//    private List<TextField> paramTextFieldsList;
-//
-//    private Label timeLapsedLabel;
-//
-//    // Default values for the fields
-//    public static final String DEFAULT_MOVE_SPEED = String.format(Locale.US, "%.1f", 0.4);
-//    public static final String DEFAULT_TURN_SPEED = String.format(Locale.US, "%.1f", 0.4);
-//    public static final String DEFAULT_FOLLOW_DISTANCE = String.format(Locale.US, "%.1f", 10.0);
-//    public static final String DEFAULT_POINT_LENGTH = String.format(Locale.US, "%.1f", 10.0);
-//    public static final String DEFAULT_SLOW_DOWN_TURN_DEGREES = String.format(Locale.US, "%.1f", 60.0);
-//    public static final String DEFAULT_SLOW_DOWN_TURN_AMOUNT = String.format(Locale.US, "%.1f", 0.6);
-//
-//
-//    public ControlPanel(double preferredWidth) {
-//        // --- SPACING CHANGE 1: Reduced main VBox spacing from 10 to 6 ---
-//        super(6);
-//        setPadding(new Insets(15));
-//        setPrefWidth(preferredWidth);
-//        setStyle("-fx-background-color: #ECEFF1;");
-//
-//        // --- SPACING CHANGE 2: Reduced title font size from 16 to 15 ---
-//        Font titleFont = Font.font("Arial", FontWeight.BOLD, 15);
-//        // --- SPACING CHANGE 3: Reduced internal VBox spacing from 8 to 5 ---
-//        final int sectionSpacing = 5;
-//
-//        // --- Path Management Section ---
-//        Label pathTitle = new Label("Path Management");
-//        pathTitle.setFont(titleFont);
-//        newPathButton = createMaxWidthButton("New Path");
-//        deletePathButton = createMaxWidthButton("Delete Path");
-//        exportPathButton = createMaxWidthButton("Export Path (CSV)");
-//        sendPathButton = createMaxWidthButton("Send Path to Robot");
-//        VBox pathControlsBox = new VBox(sectionSpacing, pathTitle, newPathButton, deletePathButton, exportPathButton, sendPathButton);
-//
-//
-//        // --- Robot Start Position Section ---
-//        Label robotStartTitle = new Label("Robot Start Position");
-//        robotStartTitle.setFont(titleFont);
-//        // --- SPACING CHANGE 4: Reduced GridPane vgap from 8 to 6 ---
-//        GridPane robotStartGrid = new GridPane();
-//        robotStartGrid.setHgap(10);
-//        robotStartGrid.setVgap(6);
-//        startXField = new TextField("0.0");
-//        startYField = new TextField("0.0");
-//        startHeadingField = new TextField("0.0");
-//        robotStartTextFieldsList = Arrays.asList(startXField, startYField, startHeadingField);
-//        robotStartGrid.add(new Label("Start X:"), 0, 0);
-//        robotStartGrid.add(startXField, 1, 0);
-//        robotStartGrid.add(new Label("Start Y:"), 0, 1);
-//        robotStartGrid.add(startYField, 1, 1);
-//        robotStartGrid.add(new Label("Start Heading:"), 0, 2);
-//        robotStartGrid.add(startHeadingField, 1, 2);
-//        VBox robotStartBox = new VBox(sectionSpacing, robotStartTitle, robotStartGrid);
-//
-//
-//        // --- Path Parameters Section ---
-//        Label paramsTitle = new Label("Path Parameters");
-//        paramsTitle.setFont(titleFont);
-//
-//        pointSelectionComboBox = new ComboBox<>();
-//        pointSelectionComboBox.setPromptText("Select Point/ALL");
-//        pointSelectionComboBox.setMaxWidth(Double.MAX_VALUE);
-//        configurePointSelectionComboBoxCellFactory();
-//
-//        // --- SPACING CHANGE 4 (continued): Reduced GridPane vgap from 8 to 6 ---
-//        GridPane paramsGrid = createParametersGrid(6);
-//        VBox curveParamsBox = new VBox(sectionSpacing, paramsTitle, pointSelectionComboBox, paramsGrid);
-//
-//        // --- Utility Controls Section ---
-//        Label utilityTitle = new Label("Utilities");
-//        utilityTitle.setFont(titleFont);
-//        clearTrailButton = createMaxWidthButton("Clear Robot Trail");
-//        clearNamedLinesButton = createMaxWidthButton("Clear Custom Lines");
-//        VBox utilityControlsBox = new VBox(sectionSpacing, utilityTitle, clearTrailButton, clearNamedLinesButton);
-//
-//
-//        // --- Recording Controls Section ---
-//        loadPlaybackIcons();
-//        Label recordingTitle = new Label("Recording");
-//        recordingTitle.setFont(titleFont);
-//        openButton = createMaxWidthButton("Open");
-//        saveButton = createMaxWidthButton("Save");
-//        HBox fileButtons = new HBox(10, openButton, saveButton);
-//        HBox.setHgrow(openButton, Priority.ALWAYS);
-//        HBox.setHgrow(saveButton, Priority.ALWAYS);
-//        recordButton = new Button();
-//        recordButton.setGraphic(recordIcon);
-//        playPauseButton = new Button();
-//        playPauseButton.setGraphic(playIcon);
-//        reverseButton = new Button();
-//        reverseButton.setGraphic(reverseIcon);
-//        forwardButton = new Button();
-//        forwardButton.setGraphic(forwardIcon);
-//        HBox recordingButtons = new HBox(10, reverseButton, playPauseButton, forwardButton, recordButton);
-//        recordingButtons.setAlignment(Pos.CENTER);
-//        timelineSlider = new Slider(0, 100, 0);
-//        timeLapsedLabel = new Label("Time: 0.000");
-//        timeLapsedLabel.setFont(Font.font("Consolas", 12));
-//        timeLapsedLabel.setMaxWidth(Double.MAX_VALUE);
-//        timeLapsedLabel.setAlignment(Pos.CENTER_RIGHT);
-//        timeLapsedLabel.setPadding(new Insets(2, 0, 0, 0));
-//
-//        VBox recordingControlsBox = new VBox(sectionSpacing, recordingTitle, fileButtons, recordingButtons, timelineSlider, timeLapsedLabel);
-//
-//        // --- Tools Section ---
-//        showPlotButton = createMaxWidthButton("Show Time Plot");
-//        VBox toolsControlsBox = new VBox(sectionSpacing, showPlotButton);
-//
-//        // --- Initial State ---
-//        enablePathControls(false);
-//        setPlaybackControlsDisabled(true);
-//        setSaveButtonDisabled(true);
-//        setPointEditingControlsDisabled(true);
-//        loadGlobalDefaultsIntoParameterFields();
-//
-//        this.getChildren().addAll(pathControlsBox, robotStartBox, curveParamsBox, utilityControlsBox, recordingControlsBox, toolsControlsBox);
-//    }
-//
-//    private GridPane createParametersGrid(double vgap) {
-//        GridPane paramsGrid = new GridPane();
-//        paramsGrid.setHgap(10);
-//        paramsGrid.setVgap(vgap);
-//        paramsGrid.setPadding(new Insets(5, 0, 5, 0)); // Reduced top/bottom padding
-//
-//        ColumnConstraints column1 = new ColumnConstraints();
-//        column1.setMinWidth(110); // Slightly reduced min width
-//        ColumnConstraints column2 = new ColumnConstraints();
-//        column2.setHgrow(Priority.SOMETIMES);
-//        paramsGrid.getColumnConstraints().addAll(column1, column2);
-//
-//        double textFieldMaxWidth = 100;
-//        moveSpeedField = new TextField();
-//        moveSpeedField.setMaxWidth(textFieldMaxWidth);
-//        turnSpeedField = new TextField();
-//        turnSpeedField.setMaxWidth(textFieldMaxWidth);
-//        followDistanceField = new TextField();
-//        followDistanceField.setMaxWidth(textFieldMaxWidth);
-//        pointLengthField = new TextField();
-//        pointLengthField.setMaxWidth(textFieldMaxWidth);
-//        slowDownTurnDegreesField = new TextField();
-//        slowDownTurnDegreesField.setMaxWidth(textFieldMaxWidth);
-//        slowDownTurnAmountField = new TextField();
-//        slowDownTurnAmountField.setMaxWidth(textFieldMaxWidth);
-//
-//        paramTextFieldsList = Arrays.asList(
-//                moveSpeedField, turnSpeedField, followDistanceField,
-//                pointLengthField, slowDownTurnDegreesField, slowDownTurnAmountField
-//        );
-//
-//        paramsGrid.add(new Label("Move Speed:"), 0, 0);
-//        paramsGrid.add(moveSpeedField, 1, 0);
-//        paramsGrid.add(new Label("Turn Speed:"), 0, 1);
-//        paramsGrid.add(turnSpeedField, 1, 1);
-//        paramsGrid.add(new Label("Follow Distance:"), 0, 2);
-//        paramsGrid.add(followDistanceField, 1, 2);
-//        paramsGrid.add(new Label("Point Length:"), 0, 3);
-//        paramsGrid.add(pointLengthField, 1, 3);
-//        paramsGrid.add(new Label("Slow Turn (Deg):"), 0, 4);
-//        paramsGrid.add(slowDownTurnDegreesField, 1, 4);
-//        paramsGrid.add(new Label("Slow Turn Amount:"), 0, 5);
-//        paramsGrid.add(slowDownTurnAmountField, 1, 5);
-//        return paramsGrid;
-//    }
-//
-//    private void configurePointSelectionComboBoxCellFactory() {
-//        Callback<ListView<Object>, ListCell<Object>> cellFactory = param -> new ListCell<>() {
-//            @Override
-//            protected void updateItem(Object item, boolean empty) {
-//                super.updateItem(item, empty);
-//                if (item == null || empty) {
-//                    setText(null);
-//                } else if (item instanceof String) {
-//                    setText((String) item);
-//                } else if (item instanceof CurvePoint) {
-//                    CurvePoint cp = (CurvePoint) item;
-//                    int index = getListView().getItems().indexOf(cp);
-//                    if (getListView().getItems().contains(ALL_POINTS_MARKER)) {
-//                        index--; // Adjust if "ALL" is present
-//                    }
-//                    setText(String.format(Locale.US, "Point %d (X:%.1f, Y:%.1f)",
-//                            index + 1, cp.x, cp.y));
-//                } else {
-//                    setText(item.toString());
-//                }
-//            }
-//        };
-//        pointSelectionComboBox.setCellFactory(cellFactory);
-//        pointSelectionComboBox.setButtonCell(cellFactory.call(null));
-//    }
-//
-//
-//    // --- Getters for NEW Robot Start Fields ---
-//    public TextField getStartXField() { return startXField; }
-//    public TextField getStartYField() { return startYField; }
-//    public TextField getStartHeadingField() { return startHeadingField; }
-//    public List<TextField> getRobotStartTextFields() { return robotStartTextFieldsList; }
-//
-//
-//    // --- Public Methods for UI manipulation ---
-//    public void updateRobotStartFields(double x, double y, double heading) {
-//        startXField.setText(String.format(Locale.US, "%.2f", x));
-//        startYField.setText(String.format(Locale.US, "%.2f", y));
-//        startHeadingField.setText(String.format(Locale.US, "%.2f", heading));
-//    }
-//
-//    private Button createMaxWidthButton(String text) {
-//        Button button = new Button(text);
-//        button.setMaxWidth(Double.MAX_VALUE);
-//        return button;
-//    }
-//
-//    private void loadPlaybackIcons() {
-//        double iconSize = 20;
-//        try {
-//            recordIcon = new ImageView(new Image(getClass().getResourceAsStream("/icons/record.png"), iconSize, iconSize, true, true));
-//            stopIcon = new ImageView(new Image(getClass().getResourceAsStream("/icons/stop.png"), iconSize, iconSize, true, true));
-//            playIcon = new ImageView(new Image(getClass().getResourceAsStream("/icons/play.png"), iconSize, iconSize, true, true));
-//            pauseIcon = new ImageView(new Image(getClass().getResourceAsStream("/icons/pause.png"), iconSize, iconSize, true, true));
-//            reverseIcon = new ImageView(new Image(getClass().getResourceAsStream("/icons/reverse.png"), iconSize, iconSize, true, true));
-//            forwardIcon = new ImageView(new Image(getClass().getResourceAsStream("/icons/forward.png"), iconSize, iconSize, true, true));
-//        } catch (Exception e) {
-//            System.err.println("Error loading playback icons: " + e.getMessage());
-//            // Consider more robust error handling or default icons
-//        }
-//    }
-//
-//    public void updateTimeLapsed(long totalMilliseconds) {
-//        if (totalMilliseconds < 0) {
-//            timeLapsedLabel.setText("Time: --.---");
-//            return;
-//        }
-//        long seconds = totalMilliseconds / 1000;
-//        long millis = totalMilliseconds % 1000;
-//        timeLapsedLabel.setText(String.format(Locale.US, "Time: %d.%03d", seconds, millis));
-//    }
-//
-//    public void setOnOpenAction(EventHandler<ActionEvent> handler) { openButton.setOnAction(handler); }
-//    public void setOnSaveAction(EventHandler<ActionEvent> handler) { saveButton.setOnAction(handler); }
-//    public void setSaveButtonDisabled(boolean isDisabled) { saveButton.setDisable(isDisabled); }
-//
-//    public void setOnNewPathAction(EventHandler<ActionEvent> handler) { newPathButton.setOnAction(handler); }
-//    public void setOnDeletePathAction(EventHandler<ActionEvent> handler) { deletePathButton.setOnAction(handler); }
-//    public void setOnExportPathAction(EventHandler<ActionEvent> handler) { exportPathButton.setOnAction(handler); }
-//    public void setOnSendPathAction(EventHandler<ActionEvent> handler) { if (sendPathButton != null) { sendPathButton.setOnAction(handler); } }
-//    public void setOnClearTrailAction(EventHandler<ActionEvent> handler) { clearTrailButton.setOnAction(handler); }
-//    public void setOnClearNamedLinesAction(EventHandler<ActionEvent> handler) { clearNamedLinesButton.setOnAction(handler); }
-//
-//    public void setOnRecordAction(Runnable action) { recordButton.setOnAction(e -> action.run()); }
-//    public void setOnPlayPauseAction(Runnable action) { playPauseButton.setOnAction(e -> action.run()); }
-//    public void setOnForwardAction(Runnable action) { if (forwardButton != null) { forwardButton.setOnAction(e -> action.run()); } }
-//    public void setOnReverseAction(Runnable action) { if (reverseButton != null) { reverseButton.setOnAction(e -> action.run()); } }
-//
-//    public void setOnTimelineSliderChanged(ChangeListener<Number> listener) { timelineSlider.valueProperty().addListener(listener); }
-//    public void setOnSliderMouseReleased(EventHandler<MouseEvent> handler) { timelineSlider.setOnMouseReleased(handler); }
-//
-//    public void setOnShowPlotAction(EventHandler<ActionEvent> handler) { if (showPlotButton != null) { showPlotButton.setOnAction(handler); } }
-//
-//    public void setPathEditingActive(boolean isActive) {
-//        newPathButton.setDisable(isActive);
-//        deletePathButton.setDisable(isActive || deletePathButton.isDisabled());
-//        exportPathButton.setDisable(isActive || exportPathButton.isDisabled());
-//        if (sendPathButton != null) {
-//            sendPathButton.setDisable(isActive || sendPathButton.isDisabled());
-//        }
-//    }
-//
-//    public void enablePathControls(boolean pathExists) {
-//        boolean pathEditingMode = newPathButton.isDisabled();
-//        deletePathButton.setDisable(!pathExists || pathEditingMode);
-//        exportPathButton.setDisable(!pathExists || pathEditingMode);
-//        if (sendPathButton != null) {
-//            sendPathButton.setDisable(!pathExists || pathEditingMode);
-//        }
-//    }
-//
-//    public void updateTimelineSlider(int currentEventIndex, int totalEvents) {
-//        if (totalEvents > 1) {
-//            timelineSlider.setMax(totalEvents - 1);
-//            timelineSlider.setValue(currentEventIndex);
-//        } else {
-//            timelineSlider.setMax(100);
-//            timelineSlider.setValue(0);
-//        }
-//    }
-//
-//    public void setTimelineSliderDisabled(boolean isDisabled) { timelineSlider.setDisable(isDisabled); }
-//    public void toggleRecordButtonIcon(boolean isRecording) { recordButton.setGraphic(isRecording ? stopIcon : recordIcon); }
-//    public void togglePlayPauseButtonIcon(boolean isPlaying) { playPauseButton.setGraphic(isPlaying ? pauseIcon : playIcon); }
-//
-//    public void setPlaybackControlsDisabled(boolean isDisabled) {
-//        playPauseButton.setDisable(isDisabled);
-//        reverseButton.setDisable(isDisabled);
-//        forwardButton.setDisable(isDisabled);
-//        timelineSlider.setDisable(isDisabled);
-//    }
-//
-//    public Slider getTimelineSlider() { return this.timelineSlider; }
-//
-//    public void setPointEditingControlsDisabled(boolean disabled) {
-//        pointSelectionComboBox.setDisable(disabled);
-//        for (TextField tf : paramTextFieldsList) {
-//            tf.setDisable(disabled);
-//        }
-//    }
-//
-//    public void updatePointSelectionComboBox(List<CurvePoint> path, Object objectToSelect) {
-//        List<Object> newItemsForComboBox = new ArrayList<>();
-//        newItemsForComboBox.add(ALL_POINTS_MARKER);
-//
-//        if (path != null && !path.isEmpty()) {
-//            newItemsForComboBox.addAll(path);
-//        }
-//
-//        pointSelectionComboBox.setItems(FXCollections.observableArrayList(newItemsForComboBox));
-//
-//        if (objectToSelect != null && newItemsForComboBox.contains(objectToSelect)) {
-//            pointSelectionComboBox.setValue(objectToSelect);
-//        } else if (path != null && !path.isEmpty()) {
-//            pointSelectionComboBox.setValue(ALL_POINTS_MARKER);
-//        } else {
-//            if (!pointSelectionComboBox.isDisabled()) {
-//                pointSelectionComboBox.setValue(ALL_POINTS_MARKER);
-//            } else {
-//                pointSelectionComboBox.setValue(null);
-//            }
-//        }
-//    }
-//
-//    public void setOnPointSelectionAction(ChangeListener<Object> listener) {
-//        pointSelectionComboBox.valueProperty().addListener(listener);
-//    }
-//
-//    public Object getSelectedPointFromComboBox() {
-//        return pointSelectionComboBox.getValue();
-//    }
-//
-//    public void loadParametersForPoint(CurvePoint point) {
-//        if (point == null) {
-//            clearParameterFields();
-//            return;
-//        }
-//        moveSpeedField.setText(String.format(Locale.US, "%.2f", point.moveSpeed));
-//        turnSpeedField.setText(String.format(Locale.US, "%.2f", point.turnSpeed));
-//        followDistanceField.setText(String.format(Locale.US, "%.2f", point.followDistance));
-//        pointLengthField.setText(String.format(Locale.US, "%.2f", point.pointLength));
-//        slowDownTurnDegreesField.setText(String.format(Locale.US, "%.1f", Math.toDegrees(point.slowDownTurnRadians)));
-//        slowDownTurnAmountField.setText(String.format(Locale.US, "%.2f", point.slowDownTurnAmount));
-//    }
-//
-//    public void loadGlobalDefaultsIntoParameterFields() {
-//        moveSpeedField.setText(DEFAULT_MOVE_SPEED);
-//        turnSpeedField.setText(DEFAULT_TURN_SPEED);
-//        followDistanceField.setText(DEFAULT_FOLLOW_DISTANCE);
-//        pointLengthField.setText(DEFAULT_POINT_LENGTH);
-//        slowDownTurnDegreesField.setText(DEFAULT_SLOW_DOWN_TURN_DEGREES);
-//        slowDownTurnAmountField.setText(DEFAULT_SLOW_DOWN_TURN_AMOUNT);
-//    }
-//
-//    public void showVariesInParameterFields() {
-//        for (TextField tf : paramTextFieldsList) {
-//            tf.setText(TEXTFIELD_VARIES_TEXT);
-//        }
-//    }
-//
-//    public void clearParameterFields() {
-//        for (TextField tf : paramTextFieldsList) {
-//            tf.setText("");
-//        }
-//    }
-//
-//    public TextField getMoveSpeedField() { return moveSpeedField; }
-//    public TextField getTurnSpeedField() { return turnSpeedField; }
-//    public TextField getFollowDistanceField() { return followDistanceField; }
-//    public TextField getPointLengthField() { return pointLengthField; }
-//    public TextField getSlowDownTurnDegreesField() { return slowDownTurnDegreesField; }
-//    public TextField getSlowDownTurnAmountField() { return slowDownTurnAmountField; }
-//    public List<TextField> getAllParamTextFields() { return paramTextFieldsList; }
-//
-//    public double getMoveSpeedParam() throws NumberFormatException { return Double.parseDouble(moveSpeedField.getText()); }
-//    public double getTurnSpeedParam() throws NumberFormatException { return Double.parseDouble(turnSpeedField.getText()); }
-//    public double getFollowDistanceParam() throws NumberFormatException { return Double.parseDouble(followDistanceField.getText()); }
-//    public double getPointLengthParam() throws NumberFormatException { return Double.parseDouble(pointLengthField.getText()); }
-//    public double getSlowDownTurnDegreesParam() throws NumberFormatException { return Double.parseDouble(slowDownTurnDegreesField.getText()); }
-//    public double getSlowDownTurnAmountParam() throws NumberFormatException { return Double.parseDouble(slowDownTurnAmountField.getText()); }
-//}
-//

@@ -238,6 +238,7 @@ public class FtcFieldSimulatorApp extends Application {
         controlPanel.setOnNewPathAction(event -> startNewPathCreation());
         controlPanel.setOnDeletePathAction(event -> deleteCurrentPath());
         controlPanel.setOnExportPathAction(event -> exportPathToCSV(ownerStage));
+        controlPanel.setOnExportCodeAction(event -> exportPathToCode(ownerStage));
         controlPanel.setOnSendPathAction(event -> handleSendPathToRobot());
         controlPanel.setOnClearTrailAction(event -> {
             fieldDisplay.clearTrail();
@@ -560,9 +561,10 @@ public class FtcFieldSimulatorApp extends Application {
         try (DatagramSocket socket = new DatagramSocket()) {
             InetAddress address = InetAddress.getByName(ROBOT_IP_ADDRESS);
 
-            // --- NEW: Send the Follow Angle first ---
+            // --- Get Follow Angle ---
+            double followAngle;
             try {
-                double followAngle = Double.parseDouble(controlPanel.getFollowAngleField().getText());
+                followAngle = Double.parseDouble(controlPanel.getFollowAngleField().getText());
                 String followAngleMessage = String.format(Locale.US, "follow_angle:%.2f", followAngle);
                 byte[] followAngleBuffer = followAngleMessage.getBytes(StandardCharsets.UTF_8);
                 DatagramPacket followAnglePacket = new DatagramPacket(followAngleBuffer, followAngleBuffer.length, address, ROBOT_LISTENER_PORT);
@@ -571,14 +573,21 @@ public class FtcFieldSimulatorApp extends Application {
             } catch (NumberFormatException e) {
                 instructionLabel.setText("Invalid Follow Angle! Sending Aborted.");
                 System.err.println("Could not parse Follow Angle. Path sending aborted.");
-                return; // Stop the process if the angle is invalid
+                return;
             }
-            // --- END NEW ---
 
-            // Send the robot's starting position
-            double startX = robot.getXInches();
-            double startY = robot.getYInches();
-            double startHeading = robot.getHeadingDegrees();
+            // --- MODIFIED: Get Start Position FROM THE UI TEXT FIELDS ---
+            double startX, startY, startHeading;
+            try {
+                startX = Double.parseDouble(controlPanel.getStartXField().getText());
+                startY = Double.parseDouble(controlPanel.getStartYField().getText());
+                startHeading = Double.parseDouble(controlPanel.getStartHeadingField().getText());
+            } catch (NumberFormatException e) {
+                instructionLabel.setText("Invalid Start Position fields! Sending Aborted.");
+                System.err.println("Could not parse Start Position fields. Path sending aborted.");
+                return; // Stop if start position is invalid
+            }
+            // --- END MODIFICATION ---
 
             String startPosMessage = String.format(Locale.US, "start_robot_pos:%.3f,%.3f,%.3f", startX, startY, startHeading);
             byte[] startPosBuffer = startPosMessage.getBytes(StandardCharsets.UTF_8);
@@ -586,23 +595,20 @@ public class FtcFieldSimulatorApp extends Application {
             socket.send(startPosPacket);
             System.out.println("Sent: " + startPosMessage);
 
-
-            // Loop through each point in the current path
+            // Loop through each point in the current path (this part is unchanged)
             for (CurvePoint point : currentPath) {
-                // Format the point data into a specific string format
                 String message = String.format(Locale.US, "curve_point:%.3f,%.3f,%.2f,%.2f,%.2f,%.2f,%.3f,%.2f",
                         point.x, point.y, point.moveSpeed, point.turnSpeed,
                         point.followDistance, point.pointLength,
                         point.slowDownTurnRadians, point.slowDownTurnAmount);
 
-                // Convert the string to bytes and send it over UDP
                 byte[] buffer = message.getBytes(StandardCharsets.UTF_8);
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length, address, ROBOT_LISTENER_PORT);
                 socket.send(packet);
                 System.out.println("Sent: " + message);
             }
 
-            // Send a final "end" message to signal the robot that the path is complete
+            // Send a final "end" message
             String endMessage = "end";
             byte[] endBuffer = endMessage.getBytes(StandardCharsets.UTF_8);
             DatagramPacket endPacket = new DatagramPacket(endBuffer, endBuffer.length, address, ROBOT_LISTENER_PORT);
@@ -617,6 +623,77 @@ public class FtcFieldSimulatorApp extends Application {
             e.printStackTrace();
         }
     }
+//
+//    private void handleSendPathToRobot() {
+//        if (currentPath.isEmpty()) {
+//            instructionLabel.setText("No path to send.");
+//            System.out.println("Attempted to send path, but currentPath is empty.");
+//            return;
+//        }
+//        instructionLabel.setText("Sending path to robot...");
+//        System.out.println("Preparing to send " + currentPath.size() + " points to robot at " + ROBOT_IP_ADDRESS + ":" + ROBOT_LISTENER_PORT);
+//
+//        // This try-with-resources block opens the network socket
+//        try (DatagramSocket socket = new DatagramSocket()) {
+//            InetAddress address = InetAddress.getByName(ROBOT_IP_ADDRESS);
+//
+//            // --- NEW: Send the Follow Angle first ---
+//            try {
+//                double followAngle = Double.parseDouble(controlPanel.getFollowAngleField().getText());
+//                String followAngleMessage = String.format(Locale.US, "follow_angle:%.2f", followAngle);
+//                byte[] followAngleBuffer = followAngleMessage.getBytes(StandardCharsets.UTF_8);
+//                DatagramPacket followAnglePacket = new DatagramPacket(followAngleBuffer, followAngleBuffer.length, address, ROBOT_LISTENER_PORT);
+//                socket.send(followAnglePacket);
+//                System.out.println("Sent: " + followAngleMessage);
+//            } catch (NumberFormatException e) {
+//                instructionLabel.setText("Invalid Follow Angle! Sending Aborted.");
+//                System.err.println("Could not parse Follow Angle. Path sending aborted.");
+//                return; // Stop the process if the angle is invalid
+//            }
+//            // --- END NEW ---
+//
+//            // Send the robot's starting position
+//            double startX = robot.getXInches();
+//            double startY = robot.getYInches();
+//            double startHeading = robot.getHeadingDegrees();
+//
+//            String startPosMessage = String.format(Locale.US, "start_robot_pos:%.3f,%.3f,%.3f", startX, startY, startHeading);
+//            byte[] startPosBuffer = startPosMessage.getBytes(StandardCharsets.UTF_8);
+//            DatagramPacket startPosPacket = new DatagramPacket(startPosBuffer, startPosBuffer.length, address, ROBOT_LISTENER_PORT);
+//            socket.send(startPosPacket);
+//            System.out.println("Sent: " + startPosMessage);
+//
+//
+//            // Loop through each point in the current path
+//            for (CurvePoint point : currentPath) {
+//                // Format the point data into a specific string format
+//                String message = String.format(Locale.US, "curve_point:%.3f,%.3f,%.2f,%.2f,%.2f,%.2f,%.3f,%.2f",
+//                        point.x, point.y, point.moveSpeed, point.turnSpeed,
+//                        point.followDistance, point.pointLength,
+//                        point.slowDownTurnRadians, point.slowDownTurnAmount);
+//
+//                // Convert the string to bytes and send it over UDP
+//                byte[] buffer = message.getBytes(StandardCharsets.UTF_8);
+//                DatagramPacket packet = new DatagramPacket(buffer, buffer.length, address, ROBOT_LISTENER_PORT);
+//                socket.send(packet);
+//                System.out.println("Sent: " + message);
+//            }
+//
+//            // Send a final "end" message to signal the robot that the path is complete
+//            String endMessage = "end";
+//            byte[] endBuffer = endMessage.getBytes(StandardCharsets.UTF_8);
+//            DatagramPacket endPacket = new DatagramPacket(endBuffer, endBuffer.length, address, ROBOT_LISTENER_PORT);
+//            socket.send(endPacket);
+//            System.out.println("Sent: " + endMessage);
+//
+//            instructionLabel.setText("Path sent successfully to " + ROBOT_IP_ADDRESS);
+//            System.out.println("Path sending complete.");
+//        } catch (IOException e) {
+//            instructionLabel.setText("Error sending path: " + e.getMessage());
+//            System.err.println("Error sending path to robot: " + e.getMessage());
+//            e.printStackTrace();
+//        }
+//    }
 
 //    private void handleSendPathToRobot() {
 //        if (currentPath.isEmpty()) {
@@ -700,6 +777,65 @@ public class FtcFieldSimulatorApp extends Application {
             }
         } else {
             instructionLabel.setText("Path export cancelled.");
+        }
+    }
+
+    /**
+     * Handles the logic for exporting the current path to a Java code snippet file.
+     * @param ownerStage The main stage, used as the owner for the file chooser dialog.
+     */
+    private void exportPathToCode(Stage ownerStage) {
+        if (currentPath == null || currentPath.isEmpty()) {
+            instructionLabel.setText("No path to export.");
+            return;
+        }
+
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Export Path to Java Code");
+        fileChooser.setInitialFileName("MyAutonomousPath.java"); // Suggest a .java file name
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Java Files (*.java)", "*.java"));
+        File file = fileChooser.showSaveDialog(ownerStage);
+
+        if (file != null) {
+            try (PrintWriter writer = new PrintWriter(file)) {
+                // --- 1. Get the follow angle ---
+                double followAngleDeg;
+                try {
+                    followAngleDeg = Double.parseDouble(controlPanel.getFollowAngleField().getText());
+                } catch (NumberFormatException e) {
+                    instructionLabel.setText("Invalid Follow Angle! Using 90 deg for export.");
+                    followAngleDeg = 90.0; // Fallback to a safe default
+                }
+
+                // --- 2. Write the Java code using the template ---
+                writer.println("        // Path generated by FTC Field Simulator");
+                writer.println("        boolean debug = true;");
+                writer.println("        ArrayList<CurvePoint> path = new ArrayList<>();");
+
+                for (CurvePoint point : currentPath) {
+                    writer.printf(Locale.US,
+                            "        path.add(new CurvePoint(%.2f, %.2f, %.2f, %.2f, %.2f, %.2f, Math.toRadians(%.1f), %.2f));\n",
+                            point.x,
+                            point.y,
+                            point.moveSpeed,
+                            point.turnSpeed,
+                            point.followDistance,
+                            point.pointLength,
+                            Math.toDegrees(point.slowDownTurnRadians),
+                            point.slowDownTurnAmount
+                    );
+                }
+
+                writer.println(); // Add a blank line for readability
+                writer.printf(Locale.US, "        commandQueue.add(new FollowPathCommand(path, Math.toRadians(%.1f), debug));\n", followAngleDeg);
+
+                instructionLabel.setText("Path exported as code to " + file.getName());
+            } catch (Exception e) {
+                instructionLabel.setText("Error exporting code: " + e.getMessage());
+                e.printStackTrace();
+            }
+        } else {
+            instructionLabel.setText("Code export cancelled.");
         }
     }
 
@@ -1175,6 +1311,11 @@ public class FtcFieldSimulatorApp extends Application {
             if (event.getCode() == KeyCode.UP || event.getCode() == KeyCode.DOWN ||
                     event.getCode() == KeyCode.A || event.getCode() == KeyCode.D) {
                 robot.setPosition(newFieldX, newFieldY);
+            }
+            if (controlPanel != null) {
+                double displayHeading = robot.getHeadingDegrees() % 360;
+                if (displayHeading < 0) displayHeading += 360;
+                controlPanel.updateRobotStartFields(robot.getXInches(), robot.getYInches(), displayHeading);
             }
             updateUIFromRobotState();
             event.consume(); // Consume the event so it's not processed further (e.g., by focus traversal)
