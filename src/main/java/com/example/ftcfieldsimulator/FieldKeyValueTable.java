@@ -5,6 +5,7 @@ import javafx.beans.property.StringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.collections.ObservableMap;
+import javafx.collections.transformation.SortedList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Label;
@@ -15,6 +16,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+import java.util.Comparator;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -38,7 +40,18 @@ public class FieldKeyValueTable extends VBox {
 
         keyValueTable = new TableView<>();
         tableData = FXCollections.observableArrayList(dataMap.entrySet());
-        keyValueTable.setItems(tableData);
+
+        // Use a SortedList to wrap the base data. This allows the TableView to
+        // maintain its sort order even when the underlying data changes.
+        SortedList<Map.Entry<String, String>> sortedData = new SortedList<>(tableData);
+
+        // Bind the comparator of the sorted list to the comparator of the table.
+        // This means when the user clicks a column header, the SortedList automatically
+        // learns how to sort itself.
+        sortedData.comparatorProperty().bind(keyValueTable.comparatorProperty());
+
+        // Set the table's items to be the sorted list.
+        keyValueTable.setItems(sortedData);
 
         dataMap.addListener((javafx.collections.MapChangeListener<String, String>) change -> {
             tableData.setAll(dataMap.entrySet());
