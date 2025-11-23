@@ -90,7 +90,6 @@ public class FtcFieldSimulatorApp extends Application {
     private static final double MASTER_DEFAULT_MOVE_SPEED = 0.4;
     private static final double MASTER_DEFAULT_TURN_SPEED = 0.4;
     private static final double MASTER_DEFAULT_FOLLOW_DISTANCE = 10.0;
-    private static final double MASTER_DEFAULT_POINT_LENGTH = 10.0;
     private static final double MASTER_DEFAULT_SLOW_DOWN_TURN_RADIANS = Math.toRadians(60);
     private static final double MASTER_DEFAULT_SLOW_DOWN_TURN_AMOUNT = 0.6;
 
@@ -344,7 +343,6 @@ public class FtcFieldSimulatorApp extends Application {
             if (textField == controlPanel.getMoveSpeedField() && parsedValue <= 0) throw new NumberFormatException("Move speed must be > 0");
             if (textField == controlPanel.getTurnSpeedField() && parsedValue <= 0) throw new NumberFormatException("Turn speed must be > 0");
             if (textField == controlPanel.getFollowDistanceField() && parsedValue < 0) throw new NumberFormatException("Follow distance must be >= 0");
-            if (textField == controlPanel.getPointLengthField() && parsedValue <= 0) throw new NumberFormatException("Point length must be > 0");
             if (textField == controlPanel.getSlowDownTurnAmountField() && (parsedValue < 0 || parsedValue > 1)) throw new NumberFormatException("Slow down amount must be 0.0-1.0");
             // No specific range for slowDownTurnDegreesField here, but it's converted to radians.
 
@@ -381,7 +379,6 @@ public class FtcFieldSimulatorApp extends Application {
         if (changedField == controlPanel.getMoveSpeedField()) point.moveSpeed = value;
         else if (changedField == controlPanel.getTurnSpeedField()) point.turnSpeed = value;
         else if (changedField == controlPanel.getFollowDistanceField()) point.followDistance = value;
-        else if (changedField == controlPanel.getPointLengthField()) point.pointLength = value;
         else if (changedField == controlPanel.getSlowDownTurnDegreesField()) point.slowDownTurnRadians = Math.toRadians(value);
         else if (changedField == controlPanel.getSlowDownTurnAmountField()) point.slowDownTurnAmount = value;
     }
@@ -390,7 +387,6 @@ public class FtcFieldSimulatorApp extends Application {
         if (textField == controlPanel.getMoveSpeedField()) return "Move Speed";
         if (textField == controlPanel.getTurnSpeedField()) return "Turn Speed";
         if (textField == controlPanel.getFollowDistanceField()) return "Follow Distance";
-        if (textField == controlPanel.getPointLengthField()) return "Point Length";
         if (textField == controlPanel.getSlowDownTurnDegreesField()) return "Slow Turn Deg";
         if (textField == controlPanel.getSlowDownTurnAmountField()) return "Slow Turn Amt";
         return "Parameter";
@@ -453,7 +449,6 @@ public class FtcFieldSimulatorApp extends Application {
         checkAndSetField(currentPath, cp -> cp.moveSpeed, controlPanel.getMoveSpeedField(), "%.2f");
         checkAndSetField(currentPath, cp -> cp.turnSpeed, controlPanel.getTurnSpeedField(), "%.2f");
         checkAndSetField(currentPath, cp -> cp.followDistance, controlPanel.getFollowDistanceField(), "%.1f");
-        checkAndSetField(currentPath, cp -> cp.pointLength, controlPanel.getPointLengthField(), "%.1f");
         checkAndSetField(currentPath, cp -> Math.toDegrees(cp.slowDownTurnRadians), controlPanel.getSlowDownTurnDegreesField(), "%.1f");
         checkAndSetField(currentPath, cp -> cp.slowDownTurnAmount, controlPanel.getSlowDownTurnAmountField(), "%.2f");
     }
@@ -496,7 +491,6 @@ public class FtcFieldSimulatorApp extends Application {
         if (field == controlPanel.getMoveSpeedField()) field.setText(ControlPanel.DEFAULT_MOVE_SPEED);
         else if (field == controlPanel.getTurnSpeedField()) field.setText(ControlPanel.DEFAULT_TURN_SPEED);
         else if (field == controlPanel.getFollowDistanceField()) field.setText(ControlPanel.DEFAULT_FOLLOW_DISTANCE);
-        else if (field == controlPanel.getPointLengthField()) field.setText(ControlPanel.DEFAULT_POINT_LENGTH);
         else if (field == controlPanel.getSlowDownTurnDegreesField()) field.setText(ControlPanel.DEFAULT_SLOW_DOWN_TURN_DEGREES);
         else if (field == controlPanel.getSlowDownTurnAmountField()) field.setText(ControlPanel.DEFAULT_SLOW_DOWN_TURN_AMOUNT);
         else field.setText("");
@@ -597,9 +591,9 @@ public class FtcFieldSimulatorApp extends Application {
 
             // Loop through each point in the current path (this part is unchanged)
             for (CurvePoint point : currentPath) {
-                String message = String.format(Locale.US, "curve_point:%.3f,%.3f,%.2f,%.2f,%.2f,%.2f,%.3f,%.2f",
+                String message = String.format(Locale.US, "curve_point:%.3f,%.3f,%.2f,%.2f,%.2f,%.3f,%.2f",
                         point.x, point.y, point.moveSpeed, point.turnSpeed,
-                        point.followDistance, point.pointLength,
+                        point.followDistance,
                         point.slowDownTurnRadians, point.slowDownTurnAmount);
 
                 byte[] buffer = message.getBytes(StandardCharsets.UTF_8);
@@ -623,136 +617,6 @@ public class FtcFieldSimulatorApp extends Application {
             e.printStackTrace();
         }
     }
-//
-//    private void handleSendPathToRobot() {
-//        if (currentPath.isEmpty()) {
-//            instructionLabel.setText("No path to send.");
-//            System.out.println("Attempted to send path, but currentPath is empty.");
-//            return;
-//        }
-//        instructionLabel.setText("Sending path to robot...");
-//        System.out.println("Preparing to send " + currentPath.size() + " points to robot at " + ROBOT_IP_ADDRESS + ":" + ROBOT_LISTENER_PORT);
-//
-//        // This try-with-resources block opens the network socket
-//        try (DatagramSocket socket = new DatagramSocket()) {
-//            InetAddress address = InetAddress.getByName(ROBOT_IP_ADDRESS);
-//
-//            // --- NEW: Send the Follow Angle first ---
-//            try {
-//                double followAngle = Double.parseDouble(controlPanel.getFollowAngleField().getText());
-//                String followAngleMessage = String.format(Locale.US, "follow_angle:%.2f", followAngle);
-//                byte[] followAngleBuffer = followAngleMessage.getBytes(StandardCharsets.UTF_8);
-//                DatagramPacket followAnglePacket = new DatagramPacket(followAngleBuffer, followAngleBuffer.length, address, ROBOT_LISTENER_PORT);
-//                socket.send(followAnglePacket);
-//                System.out.println("Sent: " + followAngleMessage);
-//            } catch (NumberFormatException e) {
-//                instructionLabel.setText("Invalid Follow Angle! Sending Aborted.");
-//                System.err.println("Could not parse Follow Angle. Path sending aborted.");
-//                return; // Stop the process if the angle is invalid
-//            }
-//            // --- END NEW ---
-//
-//            // Send the robot's starting position
-//            double startX = robot.getXInches();
-//            double startY = robot.getYInches();
-//            double startHeading = robot.getHeadingDegrees();
-//
-//            String startPosMessage = String.format(Locale.US, "start_robot_pos:%.3f,%.3f,%.3f", startX, startY, startHeading);
-//            byte[] startPosBuffer = startPosMessage.getBytes(StandardCharsets.UTF_8);
-//            DatagramPacket startPosPacket = new DatagramPacket(startPosBuffer, startPosBuffer.length, address, ROBOT_LISTENER_PORT);
-//            socket.send(startPosPacket);
-//            System.out.println("Sent: " + startPosMessage);
-//
-//
-//            // Loop through each point in the current path
-//            for (CurvePoint point : currentPath) {
-//                // Format the point data into a specific string format
-//                String message = String.format(Locale.US, "curve_point:%.3f,%.3f,%.2f,%.2f,%.2f,%.2f,%.3f,%.2f",
-//                        point.x, point.y, point.moveSpeed, point.turnSpeed,
-//                        point.followDistance, point.pointLength,
-//                        point.slowDownTurnRadians, point.slowDownTurnAmount);
-//
-//                // Convert the string to bytes and send it over UDP
-//                byte[] buffer = message.getBytes(StandardCharsets.UTF_8);
-//                DatagramPacket packet = new DatagramPacket(buffer, buffer.length, address, ROBOT_LISTENER_PORT);
-//                socket.send(packet);
-//                System.out.println("Sent: " + message);
-//            }
-//
-//            // Send a final "end" message to signal the robot that the path is complete
-//            String endMessage = "end";
-//            byte[] endBuffer = endMessage.getBytes(StandardCharsets.UTF_8);
-//            DatagramPacket endPacket = new DatagramPacket(endBuffer, endBuffer.length, address, ROBOT_LISTENER_PORT);
-//            socket.send(endPacket);
-//            System.out.println("Sent: " + endMessage);
-//
-//            instructionLabel.setText("Path sent successfully to " + ROBOT_IP_ADDRESS);
-//            System.out.println("Path sending complete.");
-//        } catch (IOException e) {
-//            instructionLabel.setText("Error sending path: " + e.getMessage());
-//            System.err.println("Error sending path to robot: " + e.getMessage());
-//            e.printStackTrace();
-//        }
-//    }
-
-//    private void handleSendPathToRobot() {
-//        if (currentPath.isEmpty()) {
-//            instructionLabel.setText("No path to send.");
-//            System.out.println("Attempted to send path, but currentPath is empty.");
-//            return;
-//        }
-//        instructionLabel.setText("Sending path to robot...");
-//        System.out.println("Preparing to send " + currentPath.size() + " points to robot at " + ROBOT_IP_ADDRESS + ":" + ROBOT_LISTENER_PORT);
-//
-//        // This try-with-resources block opens the network socket
-//        try (DatagramSocket socket = new DatagramSocket()) {
-//            InetAddress address = InetAddress.getByName(ROBOT_IP_ADDRESS);
-//
-//            // --- NEW: Send the robot's starting position first ---
-//            double startX = robot.getXInches();
-//            double startY = robot.getYInches();
-//            double startHeading = robot.getHeadingDegrees();
-//
-//            String startPosMessage = String.format(Locale.US, "start_robot_pos:%.3f,%.3f,%.3f", startX, startY, startHeading);
-//            byte[] startPosBuffer = startPosMessage.getBytes(StandardCharsets.UTF_8);
-//            DatagramPacket startPosPacket = new DatagramPacket(startPosBuffer, startPosBuffer.length, address, ROBOT_LISTENER_PORT);
-//            socket.send(startPosPacket);
-//            System.out.println("Sent: " + startPosMessage);
-//            // --- END OF NEW LOGIC ---
-//
-//
-//            // Loop through each point in the current path
-//            for (CurvePoint point : currentPath) {
-//                // Format the point data into a specific string format
-//                String message = String.format(Locale.US, "curve_point:%.3f,%.3f,%.2f,%.2f,%.2f,%.2f,%.3f,%.2f",
-//                        point.x, point.y, point.moveSpeed, point.turnSpeed,
-//                        point.followDistance, point.pointLength,
-//                        point.slowDownTurnRadians, point.slowDownTurnAmount);
-//
-//                // Convert the string to bytes and send it over UDP
-//                byte[] buffer = message.getBytes(StandardCharsets.UTF_8);
-//                DatagramPacket packet = new DatagramPacket(buffer, buffer.length, address, ROBOT_LISTENER_PORT);
-//                socket.send(packet);
-//                System.out.println("Sent: " + message);
-//            }
-//
-//            // Send a final "end" message to signal the robot that the path is complete
-//            String endMessage = "end";
-//            byte[] endBuffer = endMessage.getBytes(StandardCharsets.UTF_8);
-//            DatagramPacket endPacket = new DatagramPacket(endBuffer, endBuffer.length, address, ROBOT_LISTENER_PORT);
-//            socket.send(endPacket);
-//            System.out.println("Sent: " + endMessage);
-//
-//            instructionLabel.setText("Path sent successfully to " + ROBOT_IP_ADDRESS);
-//            System.out.println("Path sending complete.");
-//        } catch (IOException e) {
-//            instructionLabel.setText("Error sending path: " + e.getMessage());
-//            System.err.println("Error sending path to robot: " + e.getMessage());
-//            e.printStackTrace();
-//        }
-//    }
-
-
 
     private void exportPathToCSV(Stage ownerStage) {
         if (currentPath.isEmpty()) {
@@ -814,13 +678,12 @@ public class FtcFieldSimulatorApp extends Application {
 
                 for (CurvePoint point : currentPath) {
                     writer.printf(Locale.US,
-                            "        path.add(new CurvePoint(%.2f, %.2f, %.2f, %.2f, %.2f, %.2f, Math.toRadians(%.1f), %.2f));\n",
+                            "        path.add(new CurvePoint(%.2f, %.2f, %.2f, %.2f, %.2f, Math.toRadians(%.1f), %.2f));\n",
                             point.x,
                             point.y,
                             point.moveSpeed,
                             point.turnSpeed,
                             point.followDistance,
-                            point.pointLength,
                             Math.toDegrees(point.slowDownTurnRadians),
                             point.slowDownTurnAmount
                     );
@@ -912,10 +775,9 @@ public class FtcFieldSimulatorApp extends Application {
             moveSpeed = controlPanel.getMoveSpeedParam();
             turnSpeed = controlPanel.getTurnSpeedParam();
             followDistance = controlPanel.getFollowDistanceParam();
-            pointLength = controlPanel.getPointLengthParam();
             slowDownTurnDeg = controlPanel.getSlowDownTurnDegreesParam();
             slowDownTurnAmount = controlPanel.getSlowDownTurnAmountParam();
-            if (moveSpeed <= 0 || turnSpeed <= 0 || followDistance < 0 || pointLength <= 0 || slowDownTurnAmount < 0 || slowDownTurnAmount > 1) {
+            if (moveSpeed <= 0 || turnSpeed <= 0 || followDistance < 0 || slowDownTurnAmount < 0 || slowDownTurnAmount > 1) {
                 throw new NumberFormatException("Default parameter out of typical range.");
             }
             slowDownTurnRad = Math.toRadians(slowDownTurnDeg);
@@ -925,7 +787,6 @@ public class FtcFieldSimulatorApp extends Application {
             moveSpeed = MASTER_DEFAULT_MOVE_SPEED;
             turnSpeed = MASTER_DEFAULT_TURN_SPEED;
             followDistance = MASTER_DEFAULT_FOLLOW_DISTANCE;
-            pointLength = MASTER_DEFAULT_POINT_LENGTH;
             slowDownTurnRad = MASTER_DEFAULT_SLOW_DOWN_TURN_RADIANS;
             slowDownTurnAmount = MASTER_DEFAULT_SLOW_DOWN_TURN_AMOUNT;
         }
@@ -933,7 +794,7 @@ public class FtcFieldSimulatorApp extends Application {
         CurvePoint newPoint = new CurvePoint(
                 fieldX, // Use the already calculated fieldX
                 fieldY, // Use the already calculated fieldY
-                moveSpeed, turnSpeed, followDistance, pointLength, slowDownTurnRad, slowDownTurnAmount
+                moveSpeed, turnSpeed, followDistance, slowDownTurnRad, slowDownTurnAmount
         );
 
         currentPath.add(newPoint);

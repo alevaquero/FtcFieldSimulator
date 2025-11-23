@@ -47,7 +47,7 @@ public class ControlPanel extends VBox {
     // --- Path Point Parameter UI Elements ---
     private TextField followAngleField; // NEW
     private ComboBox<Object> pointSelectionComboBox;
-    private TextField moveSpeedField, turnSpeedField, followDistanceField, pointLengthField, slowDownTurnDegreesField, slowDownTurnAmountField;
+    private TextField moveSpeedField, turnSpeedField, followDistanceField, slowDownTurnDegreesField, slowDownTurnAmountField;
     private List<TextField> paramTextFieldsList;
 
     private Label timeLapsedLabel;
@@ -57,7 +57,6 @@ public class ControlPanel extends VBox {
     public static final String DEFAULT_MOVE_SPEED = String.format(Locale.US, "%.1f", 0.4);
     public static final String DEFAULT_TURN_SPEED = String.format(Locale.US, "%.1f", 0.4);
     public static final String DEFAULT_FOLLOW_DISTANCE = String.format(Locale.US, "%.1f", 10.0);
-    public static final String DEFAULT_POINT_LENGTH = String.format(Locale.US, "%.1f", 10.0);
     public static final String DEFAULT_SLOW_DOWN_TURN_DEGREES = String.format(Locale.US, "%.1f", 60.0);
     public static final String DEFAULT_SLOW_DOWN_TURN_AMOUNT = String.format(Locale.US, "%.1f", 0.6);
 
@@ -201,8 +200,6 @@ public class ControlPanel extends VBox {
         turnSpeedField.setMaxWidth(textFieldMaxWidth);
         followDistanceField = new TextField();
         followDistanceField.setMaxWidth(textFieldMaxWidth);
-        pointLengthField = new TextField();
-        pointLengthField.setMaxWidth(textFieldMaxWidth);
         slowDownTurnDegreesField = new TextField();
         slowDownTurnDegreesField.setMaxWidth(textFieldMaxWidth);
         slowDownTurnAmountField = new TextField();
@@ -210,7 +207,7 @@ public class ControlPanel extends VBox {
 
         paramTextFieldsList = Arrays.asList(
                 moveSpeedField, turnSpeedField, followDistanceField,
-                pointLengthField, slowDownTurnDegreesField, slowDownTurnAmountField
+                slowDownTurnDegreesField, slowDownTurnAmountField
         );
 
         paramsGrid.add(new Label("Move Speed:"), 0, 0);
@@ -219,8 +216,6 @@ public class ControlPanel extends VBox {
         paramsGrid.add(turnSpeedField, 1, 1);
         paramsGrid.add(new Label("Follow Distance:"), 0, 2);
         paramsGrid.add(followDistanceField, 1, 2);
-        paramsGrid.add(new Label("Point Length:"), 0, 3);
-        paramsGrid.add(pointLengthField, 1, 3);
         paramsGrid.add(new Label("Slow Turn (Deg):"), 0, 4);
         paramsGrid.add(slowDownTurnDegreesField, 1, 4);
         paramsGrid.add(new Label("Slow Turn Amount:"), 0, 5);
@@ -412,7 +407,6 @@ public class ControlPanel extends VBox {
         moveSpeedField.setText(String.format(Locale.US, "%.2f", point.moveSpeed));
         turnSpeedField.setText(String.format(Locale.US, "%.2f", point.turnSpeed));
         followDistanceField.setText(String.format(Locale.US, "%.2f", point.followDistance));
-        pointLengthField.setText(String.format(Locale.US, "%.2f", point.pointLength));
         slowDownTurnDegreesField.setText(String.format(Locale.US, "%.1f", Math.toDegrees(point.slowDownTurnRadians)));
         slowDownTurnAmountField.setText(String.format(Locale.US, "%.2f", point.slowDownTurnAmount));
     }
@@ -421,7 +415,6 @@ public class ControlPanel extends VBox {
         moveSpeedField.setText(DEFAULT_MOVE_SPEED);
         turnSpeedField.setText(DEFAULT_TURN_SPEED);
         followDistanceField.setText(DEFAULT_FOLLOW_DISTANCE);
-        pointLengthField.setText(DEFAULT_POINT_LENGTH);
         slowDownTurnDegreesField.setText(DEFAULT_SLOW_DOWN_TURN_DEGREES);
         slowDownTurnAmountField.setText(DEFAULT_SLOW_DOWN_TURN_AMOUNT);
     }
@@ -441,7 +434,6 @@ public class ControlPanel extends VBox {
     public TextField getMoveSpeedField() { return moveSpeedField; }
     public TextField getTurnSpeedField() { return turnSpeedField; }
     public TextField getFollowDistanceField() { return followDistanceField; }
-    public TextField getPointLengthField() { return pointLengthField; }
     public TextField getSlowDownTurnDegreesField() { return slowDownTurnDegreesField; }
     public TextField getSlowDownTurnAmountField() { return slowDownTurnAmountField; }
     public List<TextField> getAllParamTextFields() { return paramTextFieldsList; }
@@ -449,7 +441,6 @@ public class ControlPanel extends VBox {
     public double getMoveSpeedParam() throws NumberFormatException { return Double.parseDouble(moveSpeedField.getText()); }
     public double getTurnSpeedParam() throws NumberFormatException { return Double.parseDouble(turnSpeedField.getText()); }
     public double getFollowDistanceParam() throws NumberFormatException { return Double.parseDouble(followDistanceField.getText()); }
-    public double getPointLengthParam() throws NumberFormatException { return Double.parseDouble(pointLengthField.getText()); }
     public double getSlowDownTurnDegreesParam() throws NumberFormatException { return Double.parseDouble(slowDownTurnDegreesField.getText()); }
     public double getSlowDownTurnAmountParam() throws NumberFormatException { return Double.parseDouble(slowDownTurnAmountField.getText()); }
 }
