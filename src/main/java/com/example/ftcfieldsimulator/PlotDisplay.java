@@ -82,6 +82,20 @@ public class PlotDisplay extends Pane {
     private final Map<Integer, String> seriesNamesLine2 = new ConcurrentHashMap<>();
     private final Map<Integer, String> seriesNamesPoint2 = new ConcurrentHashMap<>();
 
+    // --- State for Series Visibility ---
+    private final Map<Integer, Boolean> seriesVisibility = new ConcurrentHashMap<>();
+
+    // --- Data structure to store legend item bounding boxes for click detection ---
+    private static class LegendItem {
+        final int style;
+        final String type; // "line", "point", "line2", "point2"
+        final double x, y, width, height;
+        LegendItem(int style, String type, double x, double y, double width, double height) {
+            this.style = style; this.type = type; this.x = x; this.y = y; this.width = width; this.height = height;
+        }
+    }
+    private final List<LegendItem> legendItems = new ArrayList<>();
+
     // Y-Axis 1 (Left)
     private double currentMinY = 0.0, currentMaxY = 100.0;
     private String yAxisUnit = "Value";
@@ -227,8 +241,38 @@ public class PlotDisplay extends Pane {
 
         getChildren().addAll(this.yAxisCanvas, this.yAxisCanvas2, this.graphContainer, this.hScrollBar);
 
+        mainGraphCanvas.setOnMouseClicked(this::handleCanvasClick);
+
         setupCursorAndLabels();
         redrawFullPlot();
+    }
+
+    // --- Method to handle clicks on the canvas ---
+    private void handleCanvasClick(MouseEvent event) {
+        // Check if the click was within the legend area
+        double clickY = event.getY();
+        double legendTopY = visibleGraphHeight + X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS;
+
+        if (clickY > legendTopY) {
+            // The click is in the legend area. Now check against each legend item's bounds.
+            // Note: clickX is relative to the canvas, but legend item X is in the scrolled coordinate space.
+            double clickX = event.getX() + hScrollBar.getValue();
+
+            for (LegendItem item : legendItems) {
+                if (clickX >= item.x && clickX <= item.x + item.width &&
+                        clickY >= item.y - item.height/2 && clickY <= item.y + item.height/2) {
+
+                    // Click is on this legend item, toggle its visibility
+                    boolean currentVisibility = seriesVisibility.getOrDefault(item.style, true);
+                    seriesVisibility.put(item.style, !currentVisibility);
+
+                    // Redraw the entire plot to show/hide the series and update the checkbox
+                    redrawFullPlot();
+                    event.consume(); // Stop the event from propagating further
+                    return; // Found our item, no need to check others
+                }
+            }
+        }
     }
 
     private void setupCursorAndLabels() {
@@ -307,18 +351,22 @@ public class PlotDisplay extends Pane {
         // --- Handle Series Name Events ---
         else if (event instanceof PlotSeriesNameLineEvent snle) {
             seriesNamesLine.put(snle.getStyle(), snle.getSeriesName());
-            redrawFullPlot(); // Redraw to show the new legend entry
-            return; // No need to update scrollbar for this
+            seriesVisibility.putIfAbsent(snle.getStyle(), true); // Default to visible
+            redrawFullPlot();
+            return;
         } else if (event instanceof PlotSeriesNamePointEvent snpe) {
             seriesNamesPoint.put(snpe.getStyle(), snpe.getSeriesName());
+            seriesVisibility.putIfAbsent(snpe.getStyle(), true); // Default to visible
             redrawFullPlot();
             return;
         } else if (event instanceof PlotSeriesNameLine2Event snle2) {
             seriesNamesLine2.put(snle2.getStyle(), snle2.getSeriesName());
+            seriesVisibility.putIfAbsent(snle2.getStyle() + 1000, true); // Use offset for Y2 axis styles
             redrawFullPlot();
             return;
         } else if (event instanceof PlotSeriesNamePoint2Event snpe2) {
             seriesNamesPoint2.put(snpe2.getStyle(), snpe2.getSeriesName());
+            seriesVisibility.putIfAbsent(snpe2.getStyle() + 1000, true); // Use offset for Y2 axis styles
             redrawFullPlot();
             return;
         }
@@ -340,6 +388,7 @@ public class PlotDisplay extends Pane {
         seriesNamesPoint.clear();
         seriesNamesLine2.clear();
         seriesNamesPoint2.clear();
+        seriesVisibility.clear();
 
         firstTimestamp = -1; lastTimestamp = -1; currentScrollOffsetMs = 0;
         hScrollBar.setValue(0);
@@ -423,32 +472,53 @@ public class PlotDisplay extends Pane {
     }
 
     private void drawLegend() {
-        // No need to clear here as redrawMainGraph already does it.
-        // The GraphicsContext is already translated, so we need to draw relative to the scrollbar's value.
-        double currentX = hScrollBar.getValue() + 5; // Start drawing just inside the visible area
-        // --- MODIFICATION 4: Calculate Y position relative to the top of the canvas ---
+        // Clear the list of clickable legend items before redrawing
+        legendItems.clear();
+
+        double currentX = hScrollBar.getValue() + 5;
         double legendY = visibleGraphHeight + X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS + 15;
         double sampleLength = 20;
         double padding = 5;
-        double textOffset = 4; // Vertically center text better
+        double textOffset = 4;
+        double checkboxSize = 13;
+        double checkboxPadding = 3;
 
         mainGc.setFont(Font.font("Arial", 10));
         mainGc.setTextAlign(TextAlignment.LEFT);
 
         // Draw line series names
-        currentX = drawSeriesNames(mainGc, seriesNamesLine, currentX, legendY, sampleLength, padding, textOffset, true);
-        currentX = drawSeriesNames(mainGc, seriesNamesLine2, currentX, legendY, sampleLength, padding, textOffset, true);
+        currentX = drawSeriesNames(mainGc, seriesNamesLine, "line", currentX, legendY, sampleLength, padding, textOffset, checkboxSize, checkboxPadding, true);
+        currentX = drawSeriesNames(mainGc, seriesNamesLine2, "line2", currentX, legendY, sampleLength, padding, textOffset, checkboxSize, checkboxPadding, true);
         // Draw point series names
-        currentX = drawSeriesNames(mainGc, seriesNamesPoint, currentX, legendY, sampleLength, padding, textOffset, false);
-        drawSeriesNames(mainGc, seriesNamesPoint2, currentX, legendY, sampleLength, padding, textOffset, false);
+        currentX = drawSeriesNames(mainGc, seriesNamesPoint, "point", currentX, legendY, sampleLength, padding, textOffset, checkboxSize, checkboxPadding, false);
+        drawSeriesNames(mainGc, seriesNamesPoint2, "point2", currentX, legendY, sampleLength, padding, textOffset, checkboxSize, checkboxPadding, false);
     }
 
-    private double drawSeriesNames(GraphicsContext gc, Map<Integer, String> nameMap, double startX, double y, double sampleLength, double padding, double textOffset, boolean isLine) {
+    private double drawSeriesNames(GraphicsContext gc, Map<Integer, String> nameMap, String type, double startX, double y, double sampleLength, double padding, double textOffset, double checkboxSize, double checkboxPadding, boolean isLine) {
         double currentX = startX;
         for (Map.Entry<Integer, String> entry : nameMap.entrySet()) {
             int style = entry.getKey();
-            String name = entry.getValue();
+            int visibilityKey = type.contains("2") ? style + 1000 : style;
+            boolean isVisible = seriesVisibility.getOrDefault(visibilityKey, true);
 
+            // --- Draw the CheckBox ---
+            // Outer box
+            gc.setStroke(Color.BLACK);
+            gc.setLineWidth(1.0);
+            gc.strokeRect(currentX, y - checkboxSize / 2, checkboxSize, checkboxSize);
+
+            // Inner check mark if visible
+            if (isVisible) {
+                gc.setStroke(Color.GREEN.darker());
+                gc.setLineWidth(2.0);
+                gc.strokeLine(currentX + 3, y, currentX + 6, y + 3);
+                gc.strokeLine(currentX + 6, y + 3, currentX + 10, y - 1);
+            }
+
+            double itemStartX = currentX;
+            currentX += checkboxSize + checkboxPadding;
+
+            // --- Draw the Line/Point Sample ---
             if (style >= 1 && style <= LINE_STYLES.length) {
                 LineStyle ls = LINE_STYLES[style - 1];
                 gc.setStroke(ls.color);
@@ -464,13 +534,24 @@ public class PlotDisplay extends Pane {
                 gc.setFill(Color.BLACK);
                 gc.setLineWidth(1.0);
                 gc.setLineDashes(new double[0]);
+
+                String name = entry.getValue();
+                // If not visible, draw text in gray
+                if (!isVisible) {
+                    gc.setFill(Color.GRAY);
+                }
                 gc.fillText(name, currentX + sampleLength + padding, y + textOffset);
 
-                // Use a more accurate text width measurement
-                currentX += sampleLength + padding + new javafx.scene.text.Text(name).getLayoutBounds().getWidth() + padding;
+                double textWidth = new javafx.scene.text.Text(name).getLayoutBounds().getWidth();
+                double itemTotalWidth = (currentX - itemStartX) + sampleLength + padding + textWidth + padding;
+
+                // Store the bounding box of the entire legend item for click detection
+                legendItems.add(new LegendItem(visibilityKey, type, itemStartX, y, itemTotalWidth, checkboxSize + 2));
+
+                currentX += sampleLength + padding + textWidth + padding;
             }
         }
-        return currentX; // Return the new X position
+        return currentX;
     }
 
 
@@ -514,6 +595,7 @@ public class PlotDisplay extends Pane {
         mainGc.fillText("Seconds", hScrollBar.getValue() + visibleGraphWidth / 2.0, visibleGraphHeight + 18); // Adjusted Y position
     }
 
+
     private void drawData() {
         if (firstTimestamp == -1) return;
         long viewStartMs = firstTimestamp + (long)currentScrollOffsetMs;
@@ -521,17 +603,20 @@ public class PlotDisplay extends Pane {
             for(int i=0; i<LINE_STYLES.length; i++) { lastLinePointByStyle[i]=null; lastLinePointByStyle2[i]=null; }
             for (PlotDataEvent e : plotEvents) {
                 if(e.getTimestamp() < viewStartMs){
+                    // This logic for pre-populating last point is correct
                     if(e instanceof PlotLineEvent le) lastLinePointByStyle[le.getStyle()-1]=new PlotPoint(timeMsToScreenX(le.getTimestamp()),yValueToScreenY(le.getYValue()));
                     else if(e instanceof PlotLine2Event le2) lastLinePointByStyle2[le2.getStyle()-1]=new PlotPoint(timeMsToScreenX(le2.getTimestamp()),yValueToScreenY2(le2.getYValue()));
                 } else {
                     break;
                 }
             }
+
+            // --- Check visibility before drawing ---
             for(PlotDataEvent e : plotEvents) {
-                if(e instanceof PlotPointEvent p) drawPlotPoint(p);
-                else if(e instanceof PlotLineEvent p) drawPlotLine(p);
-                else if(e instanceof PlotPoint2Event p) drawPlotPoint2(p);
-                else if(e instanceof PlotLine2Event p) drawPlotLine2(p);
+                if(e instanceof PlotPointEvent p && seriesVisibility.getOrDefault(p.getStyle(), true)) drawPlotPoint(p);
+                else if(e instanceof PlotLineEvent p && seriesVisibility.getOrDefault(p.getStyle(), true)) drawPlotLine(p);
+                else if(e instanceof PlotPoint2Event p && seriesVisibility.getOrDefault(p.getStyle() + 1000, true)) drawPlotPoint2(p);
+                else if(e instanceof PlotLine2Event p && seriesVisibility.getOrDefault(p.getStyle() + 1000, true)) drawPlotLine2(p);
             }
             for (PlotDataEvent e : plotEvents) { if (e instanceof PlotTextAnnotationEvent p) drawMarkerTextAnnotation(p); }
         }
