@@ -161,6 +161,53 @@ public class UdpClientPlot {
         sendMessage(message);
     }
 
+    /**
+     * Assigns a name to a line series on the primary (left) Y-axis.
+     * @param timestamp The current time.
+     * @param label The name for the series (e.g., "Target RPM").
+     * @param style The style index (1-10) this name applies to.
+     */
+    public void sendSeriesNameLine(long timestamp, String label, int style) {
+        String message = String.format(Locale.US, "SERIESNAMELINE %d \"%s\" %d",
+                timestamp, label, style);
+        sendMessage(message);
+    }
+
+    /**
+     * Assigns a name to a point series on the primary (left) Y-axis.
+     * @param timestamp The current time.
+     * @param label The name for the series.
+     * @param style The style index (1-10) this name applies to.
+     */
+    public void sendSeriesNamePoint(long timestamp, String label, int style) {
+        String message = String.format(Locale.US, "SERIESNAMEPOINT %d \"%s\" %d",
+                timestamp, label, style);
+        sendMessage(message);
+    }
+
+    /**
+     * Assigns a name to a line series on the secondary (right) Y-axis.
+     * @param timestamp The current time.
+     * @param label The name for the series (e.g., "Motor Power").
+     * @param style The style index (1-10) this name applies to.
+     */
+    public void sendSeriesNameLine2(long timestamp, String label, int style) {
+        String message = String.format(Locale.US, "SERIESNAMELINE2 %d \"%s\" %d",
+                timestamp, label, style);
+        sendMessage(message);
+    }
+
+    /**
+     * Assigns a name to a point series on the secondary (right) Y-axis.
+     * @param timestamp The current time.
+     * @param label The name for the series.
+     * @param style The style index (1-10) this name applies to.
+     */
+    public void sendSeriesNamePoint2(long timestamp, String label, int style) {
+        String message = String.format(Locale.US, "SERIESNAMEPOINT2 %d \"%s\" %d",
+                timestamp, label, style);
+        sendMessage(message);
+    }
 
     // --- Client Management ---
 

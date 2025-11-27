@@ -137,6 +137,22 @@ public class UdpPlotListener implements Runnable {
                 case "YUNITS2":
                     if (args.size() >= 2) event = new PlotYUnits2Event(timestamp, args.get(1));
                     break;
+                case "SERIESNAMELINE":
+                    // Format: SERIESNAMELINE <timestamp> "<label>" <style>
+                    if (args.size() >= 3) event = new PlotSeriesNameLineEvent(timestamp, args.get(1), Integer.parseInt(args.get(2)));
+                    break;
+                case "SERIESNAMEPOINT":
+                    // Format: SERIESNAMEPOINT <timestamp> "<label>" <style>
+                    if (args.size() >= 3) event = new PlotSeriesNamePointEvent(timestamp, args.get(1), Integer.parseInt(args.get(2)));
+                    break;
+                case "SERIESNAMELINE2":
+                    // Format: SERIESNAMELINE2 <timestamp> "<label>" <style>
+                    if (args.size() >= 3) event = new PlotSeriesNameLine2Event(timestamp, args.get(1), Integer.parseInt(args.get(2)));
+                    break;
+                case "SERIESNAMEPOINT2":
+                    // Format: SERIESNAMEPOINT2 <timestamp> "<label>" <style>
+                    if (args.size() >= 3) event = new PlotSeriesNamePoint2Event(timestamp, args.get(1), Integer.parseInt(args.get(2)));
+                    break;
                 default:
                     System.err.println("Unknown plot command: " + type);
             }

@@ -115,6 +115,15 @@ public class ControlPanel extends VBox {
 
         // --- NEW: Follow Angle Field ---
         followAngleField = new TextField(DEFAULT_FOLLOW_ANGLE);
+        Tooltip followAngleTooltip = new Tooltip(
+                "The robot's heading relative to the path's direction.\n\n" +
+                        "• 90°: Forward (like driving a car)\n" +
+                        "• 0°: Sideways (facing right)\n" +
+                        "• 180°: Sideways (facing left)\n" +
+                        "• -90°: Backward (like reversing a car)"
+        );
+        followAngleTooltip.setWrapText(true); // Ensure the text wraps nicely
+        followAngleField.setTooltip(followAngleTooltip);
         GridPane followAngleGrid = new GridPane();
         followAngleGrid.setHgap(10);
         followAngleGrid.setVgap(6);
@@ -204,6 +213,12 @@ public class ControlPanel extends VBox {
         slowDownTurnDegreesField.setMaxWidth(textFieldMaxWidth);
         slowDownTurnAmountField = new TextField();
         slowDownTurnAmountField.setMaxWidth(textFieldMaxWidth);
+
+        moveSpeedField.setTooltip(new Tooltip("The robot's general speed (0.0 to 1.0) when moving to this point."));
+        turnSpeedField.setTooltip(new Tooltip("The robot's general turning speed (0.0 to 1.0) when correcting its heading for this point."));
+        followDistanceField.setTooltip(new Tooltip("The 'look-ahead' distance in inches. The robot aims for a point on the path this far ahead of its current position."));
+        slowDownTurnDegreesField.setTooltip(new Tooltip("If the angle to the next turn is less than this value (in degrees), the robot will begin to slow down."));
+        slowDownTurnAmountField.setTooltip(new Tooltip("The factor (0.0 to 1.0) by which to reduce the move speed when slowing down for a turn. 0.0 is a full stop, 1.0 is no slowdown."));
 
         paramTextFieldsList = Arrays.asList(
                 moveSpeedField, turnSpeedField, followDistanceField,

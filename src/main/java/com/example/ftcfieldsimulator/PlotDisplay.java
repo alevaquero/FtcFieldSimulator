@@ -44,7 +44,7 @@ public class PlotDisplay extends Pane {
     public static final double DEFAULT_PLOT_AREA_HEIGHT_PIXELS = DEFAULT_PLOT_AREA_WIDTH_PIXELS * (9.0 / 16.0);
 
     private static final double PADDING_TOP = 30;
-    private static final double PADDING_BOTTOM = 50;
+    private static final double PADDING_BOTTOM = 80;
     private static final double PADDING_LEFT_FOR_Y_AXIS = 60;
     private static final double PADDING_RIGHT_FOR_Y_AXIS_2 = 60;
     private static final double PADDING_RIGHT_GRAPH = 20;
@@ -75,6 +75,12 @@ public class PlotDisplay extends Pane {
     private final List<PlotDataEvent> plotEvents = new ArrayList<>();
     private static final int MAX_PLOT_EVENTS = 100000;
     private static final long MAX_TIME_GAP_MS = 15000;
+
+    // --- Data Storage for Series Names ---
+    private final Map<Integer, String> seriesNamesLine = new ConcurrentHashMap<>();
+    private final Map<Integer, String> seriesNamesPoint = new ConcurrentHashMap<>();
+    private final Map<Integer, String> seriesNamesLine2 = new ConcurrentHashMap<>();
+    private final Map<Integer, String> seriesNamesPoint2 = new ConcurrentHashMap<>();
 
     // Y-Axis 1 (Left)
     private double currentMinY = 0.0, currentMaxY = 100.0;
@@ -142,10 +148,30 @@ public class PlotDisplay extends Pane {
         this.yAxisGc2 = yAxisCanvas2.getGraphicsContext2D();
         this.yAxisCanvas2.setVisible(true);
 
-        this.mainGraphCanvas = new Canvas(this.visibleGraphWidth, this.visibleGraphHeight + X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS);
+        this.mainGraphCanvas = new Canvas(this.visibleGraphWidth, this.visibleGraphHeight + X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS + PADDING_BOTTOM);
         this.mainGc = mainGraphCanvas.getGraphicsContext2D();
         this.graphContainer = new StackPane(mainGraphCanvas);
-        this.graphContainer.setPrefSize(this.visibleGraphWidth, this.visibleGraphHeight + X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS);
+        this.graphContainer.setPrefSize(this.visibleGraphWidth, this.visibleGraphHeight + X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS + PADDING_BOTTOM);
+
+//        this.hScrollBar = new ScrollBar();
+//        this.hScrollBar.setOrientation(Orientation.HORIZONTAL);
+//        hScrollBar.valueProperty().addListener((obs, oldVal, newVal) -> {
+//            currentScrollOffsetMs = (pixelsPerMillisecond > 0) ? newVal.doubleValue() / pixelsPerMillisecond : 0;
+//            redrawMainGraph();
+//        });
+//        hScrollBar.pressedProperty().addListener((obs, was, is) -> { if (is) setAutoScrollEnabled(false); });
+//
+//        // The total Pane size is still calculated the same way, as the main canvas is inside the graphContainer
+//        double totalPaneWidth = PADDING_LEFT_FOR_Y_AXIS + this.visibleGraphWidth + PADDING_RIGHT_FOR_Y_AXIS_2 + PADDING_RIGHT_GRAPH;
+//        double totalPaneHeight = PADDING_TOP + this.visibleGraphHeight + X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS + SCROLLBAR_HEIGHT;
+//        setPrefSize(totalPaneWidth, totalPaneHeight);
+//
+//        yAxisCanvas.setLayoutX(0);
+//        yAxisCanvas.setLayoutY(0);
+//        graphContainer.setLayoutX(PADDING_LEFT_FOR_Y_AXIS);
+//        graphContainer.setLayoutY(PADDING_TOP);
+//        yAxisCanvas2.setLayoutX(PADDING_LEFT_FOR_Y_AXIS + this.visibleGraphWidth);
+//        yAxisCanvas2.setLayoutY(0);
 
         this.hScrollBar = new ScrollBar();
         this.hScrollBar.setOrientation(Orientation.HORIZONTAL);
@@ -156,20 +182,48 @@ public class PlotDisplay extends Pane {
         });
         hScrollBar.pressedProperty().addListener((obs, was, is) -> { if (is) setAutoScrollEnabled(false); });
 
+
+        // 1. The total height of the Pane must account for the TALLER main canvas area.
+        double totalMainCanvasHeight = this.visibleGraphHeight + X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS + PADDING_BOTTOM;
+        double totalPaneHeight = PADDING_TOP + totalMainCanvasHeight + SCROLLBAR_HEIGHT;
+
+        // 2. The total width calculation remains the same.
         double totalPaneWidth = PADDING_LEFT_FOR_Y_AXIS + this.visibleGraphWidth + PADDING_RIGHT_FOR_Y_AXIS_2 + PADDING_RIGHT_GRAPH;
-        double totalPaneHeight = PADDING_TOP + this.visibleGraphHeight + X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS + SCROLLBAR_HEIGHT;
+
+        // 3. Set the PREFERRED SIZE of the parent Pane to this new, correct total height.
         setPrefSize(totalPaneWidth, totalPaneHeight);
 
+        // --- Layout of Children ---
         yAxisCanvas.setLayoutX(0);
         yAxisCanvas.setLayoutY(0);
+
         graphContainer.setLayoutX(PADDING_LEFT_FOR_Y_AXIS);
         graphContainer.setLayoutY(PADDING_TOP);
+
         yAxisCanvas2.setLayoutX(PADDING_LEFT_FOR_Y_AXIS + this.visibleGraphWidth);
         yAxisCanvas2.setLayoutY(0);
+
+        // 4. The scrollbar's Y position is now calculated based on the new total canvas height.
         hScrollBar.setLayoutX(PADDING_LEFT_FOR_Y_AXIS);
-        hScrollBar.setLayoutY(PADDING_TOP + this.visibleGraphHeight + X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS);
+        hScrollBar.setLayoutY(PADDING_TOP + totalMainCanvasHeight); // Position it directly below the taller main canvas.
         hScrollBar.setPrefWidth(this.visibleGraphWidth);
         hScrollBar.setPrefHeight(SCROLLBAR_HEIGHT);
+
+//        double totalPaneWidth = PADDING_LEFT_FOR_Y_AXIS + this.visibleGraphWidth + PADDING_RIGHT_FOR_Y_AXIS_2 + PADDING_RIGHT_GRAPH;
+//        double totalPaneHeight = PADDING_TOP + this.visibleGraphHeight + X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS + SCROLLBAR_HEIGHT;
+//        setPrefSize(totalPaneWidth, totalPaneHeight);
+//
+//        yAxisCanvas.setLayoutX(0);
+//        yAxisCanvas.setLayoutY(0);
+//        graphContainer.setLayoutX(PADDING_LEFT_FOR_Y_AXIS);
+//        graphContainer.setLayoutY(PADDING_TOP);
+//        yAxisCanvas2.setLayoutX(PADDING_LEFT_FOR_Y_AXIS + this.visibleGraphWidth);
+//        yAxisCanvas2.setLayoutY(0);
+//
+//        hScrollBar.setLayoutX(PADDING_LEFT_FOR_Y_AXIS);
+//        hScrollBar.setLayoutY(PADDING_TOP + this.visibleGraphHeight + X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS); // This should be below the graph area, not the whole pane
+//        hScrollBar.setPrefWidth(this.visibleGraphWidth);
+//        hScrollBar.setPrefHeight(SCROLLBAR_HEIGHT);
 
         getChildren().addAll(this.yAxisCanvas, this.yAxisCanvas2, this.graphContainer, this.hScrollBar);
 
@@ -234,7 +288,13 @@ public class PlotDisplay extends Pane {
         if (isFirst) firstTimestamp = event.getTimestamp();
         if (lastTimestamp == -1 || event.getTimestamp() > lastTimestamp) lastTimestamp = event.getTimestamp();
 
-        synchronized (plotEvents) { if (!(event instanceof PlotKeyValueEvent)) { if (plotEvents.size() >= MAX_PLOT_EVENTS) plotEvents.remove(0); plotEvents.add(event); } }
+        synchronized (plotEvents) {
+            // MODIFIED: Also add name events to the main list so they can be saved/loaded
+            if (!(event instanceof PlotKeyValueEvent)) {
+                if (plotEvents.size() >= MAX_PLOT_EVENTS) plotEvents.remove(0);
+                plotEvents.add(event);
+            }
+        }
 
         if (event instanceof PlotKeyValueEvent kv) {
             keyValueStore.computeIfAbsent(kv.getKey(), k -> new ArrayList<>()).add(new TimestampedStringValue(kv.getTimestamp(), kv.getValue()));
@@ -243,6 +303,25 @@ public class PlotDisplay extends Pane {
         else if (event instanceof PlotYUnitsEvent yue) { setYUnit(yue.getUnit()); return; }
         else if (event instanceof PlotYLimits2Event yle2) setYLimits2(yle2.getMinY(), yle2.getMaxY());
         else if (event instanceof PlotYUnits2Event yue2) { setYUnit2(yue2.getUnit()); return; }
+
+        // --- Handle Series Name Events ---
+        else if (event instanceof PlotSeriesNameLineEvent snle) {
+            seriesNamesLine.put(snle.getStyle(), snle.getSeriesName());
+            redrawFullPlot(); // Redraw to show the new legend entry
+            return; // No need to update scrollbar for this
+        } else if (event instanceof PlotSeriesNamePointEvent snpe) {
+            seriesNamesPoint.put(snpe.getStyle(), snpe.getSeriesName());
+            redrawFullPlot();
+            return;
+        } else if (event instanceof PlotSeriesNameLine2Event snle2) {
+            seriesNamesLine2.put(snle2.getStyle(), snle2.getSeriesName());
+            redrawFullPlot();
+            return;
+        } else if (event instanceof PlotSeriesNamePoint2Event snpe2) {
+            seriesNamesPoint2.put(snpe2.getStyle(), snpe2.getSeriesName());
+            redrawFullPlot();
+            return;
+        }
 
         updateCanvasWidthAndScrollbar();
         if (autoScrollEnabled.get() && !(event instanceof PlotKeyValueEvent)) scrollToTimestamp(event.getTimestamp());
@@ -257,6 +336,11 @@ public class PlotDisplay extends Pane {
     public void clearPlot() {
         synchronized (plotEvents) { plotEvents.clear(); }
         synchronized (keyValueStore) { keyValueStore.clear(); }
+        seriesNamesLine.clear();
+        seriesNamesPoint.clear();
+        seriesNamesLine2.clear();
+        seriesNamesPoint2.clear();
+
         firstTimestamp = -1; lastTimestamp = -1; currentScrollOffsetMs = 0;
         hScrollBar.setValue(0);
         updateCanvasWidthAndScrollbar();
@@ -332,10 +416,63 @@ public class PlotDisplay extends Pane {
 
             drawData();
             drawCursor();
+            drawLegend();
         } finally {
             mainGc.restore(); // This undoes both the translation and the clip
         }
     }
+
+    private void drawLegend() {
+        // No need to clear here as redrawMainGraph already does it.
+        // The GraphicsContext is already translated, so we need to draw relative to the scrollbar's value.
+        double currentX = hScrollBar.getValue() + 5; // Start drawing just inside the visible area
+        // --- MODIFICATION 4: Calculate Y position relative to the top of the canvas ---
+        double legendY = visibleGraphHeight + X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS + 15;
+        double sampleLength = 20;
+        double padding = 5;
+        double textOffset = 4; // Vertically center text better
+
+        mainGc.setFont(Font.font("Arial", 10));
+        mainGc.setTextAlign(TextAlignment.LEFT);
+
+        // Draw line series names
+        currentX = drawSeriesNames(mainGc, seriesNamesLine, currentX, legendY, sampleLength, padding, textOffset, true);
+        currentX = drawSeriesNames(mainGc, seriesNamesLine2, currentX, legendY, sampleLength, padding, textOffset, true);
+        // Draw point series names
+        currentX = drawSeriesNames(mainGc, seriesNamesPoint, currentX, legendY, sampleLength, padding, textOffset, false);
+        drawSeriesNames(mainGc, seriesNamesPoint2, currentX, legendY, sampleLength, padding, textOffset, false);
+    }
+
+    private double drawSeriesNames(GraphicsContext gc, Map<Integer, String> nameMap, double startX, double y, double sampleLength, double padding, double textOffset, boolean isLine) {
+        double currentX = startX;
+        for (Map.Entry<Integer, String> entry : nameMap.entrySet()) {
+            int style = entry.getKey();
+            String name = entry.getValue();
+
+            if (style >= 1 && style <= LINE_STYLES.length) {
+                LineStyle ls = LINE_STYLES[style - 1];
+                gc.setStroke(ls.color);
+                gc.setFill(ls.color);
+                gc.setLineWidth(ls.width);
+                if (isLine) {
+                    gc.setLineDashes(ls.dashArray != null ? ls.dashArray : new double[0]);
+                    gc.strokeLine(currentX, y, currentX + sampleLength, y);
+                } else {
+                    gc.fillOval(currentX + sampleLength / 2 - 2, y - 2, 4, 4);
+                }
+
+                gc.setFill(Color.BLACK);
+                gc.setLineWidth(1.0);
+                gc.setLineDashes(new double[0]);
+                gc.fillText(name, currentX + sampleLength + padding, y + textOffset);
+
+                // Use a more accurate text width measurement
+                currentX += sampleLength + padding + new javafx.scene.text.Text(name).getLayoutBounds().getWidth() + padding;
+            }
+        }
+        return currentX; // Return the new X position
+    }
+
 
     private void drawXAxisDecorations() {
         double step = 500; if(pixelsPerMillisecond*step<40) step=1000; if(pixelsPerMillisecond*step<40) step=2000; if(pixelsPerMillisecond*step<40) step=5000;
@@ -368,9 +505,13 @@ public class PlotDisplay extends Pane {
         // --- END GRID LINE FIX ---
 
         // Draw the "Seconds" label
+//        mainGc.setFont(Font.font("Arial", FontWeight.NORMAL, 12));
+//        mainGc.setTextAlign(TextAlignment.CENTER);
+//        mainGc.fillText("Seconds", hScrollBar.getValue() + visibleGraphWidth / 2.0, visibleGraphHeight + X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS - 5);
+
         mainGc.setFont(Font.font("Arial", FontWeight.NORMAL, 12));
         mainGc.setTextAlign(TextAlignment.CENTER);
-        mainGc.fillText("Seconds", hScrollBar.getValue() + visibleGraphWidth / 2.0, visibleGraphHeight + X_AXIS_LABEL_AREA_HEIGHT_ON_MAIN_CANVAS - 5);
+        mainGc.fillText("Seconds", hScrollBar.getValue() + visibleGraphWidth / 2.0, visibleGraphHeight + 18); // Adjusted Y position
     }
 
     private void drawData() {
@@ -518,6 +659,10 @@ public class PlotDisplay extends Pane {
             else if(e instanceof PlotYUnitsEvent p) sb.append(String.format("YUNITS %d \"%s\"\n",ts,p.getUnit()));
             else if(e instanceof PlotYLimits2Event p) sb.append(String.format(Locale.US,"YLIMITS2 %d %.6f %.6f\n",ts,p.getMinY(),p.getMaxY()));
             else if(e instanceof PlotYUnits2Event p) sb.append(String.format("YUNITS2 %d \"%s\"\n",ts,p.getUnit()));
+            else if(e instanceof PlotSeriesNameLineEvent p) sb.append(String.format("SERIESNAMELINE %d \"%s\" %d\n",ts,p.getSeriesName(), p.getStyle()));
+            else if(e instanceof PlotSeriesNamePointEvent p) sb.append(String.format("SERIESNAMEPOINT %d \"%s\" %d\n",ts,p.getSeriesName(), p.getStyle()));
+            else if(e instanceof PlotSeriesNameLine2Event p) sb.append(String.format("SERIESNAMELINE2 %d \"%s\" %d\n",ts,p.getSeriesName(), p.getStyle()));
+            else if(e instanceof PlotSeriesNamePoint2Event p) sb.append(String.format("SERIESNAMEPOINT2 %d \"%s\" %d\n",ts,p.getSeriesName(), p.getStyle()));
         }
         try(BufferedWriter w=new BufferedWriter(new FileWriter(file))){w.write(sb.toString());}catch(IOException ex){ex.printStackTrace();}
     }
@@ -548,6 +693,11 @@ public class PlotDisplay extends Pane {
                             case "YUNITS": if(args.size()>=2) e=new PlotYUnitsEvent(ts,args.get(1)); break;
                             case "YLIMITS2": if(args.size()>=3) e=new PlotYLimits2Event(ts,Double.parseDouble(args.get(2)),Double.parseDouble(args.get(1))); break;
                             case "YUNITS2": if(args.size()>=2) e=new PlotYUnits2Event(ts,args.get(1)); break;
+                            case "SERIESNAMELINE": if(args.size()>=3) e=new PlotSeriesNameLineEvent(ts, args.get(1), Integer.parseInt(args.get(2))); break;
+                            case "SERIESNAMEPOINT": if(args.size()>=3) e=new PlotSeriesNamePointEvent(ts, args.get(1), Integer.parseInt(args.get(2))); break;
+                            case "SERIESNAMELINE2": if(args.size()>=3) e=new PlotSeriesNameLine2Event(ts, args.get(1), Integer.parseInt(args.get(2))); break;
+                            case "SERIESNAMEPOINT2": if(args.size()>=3) e=new PlotSeriesNamePoint2Event(ts, args.get(1), Integer.parseInt(args.get(2))); break;
+
                         }
                         if(e!=null)processNewEvent(e);
                     }catch(NumberFormatException ex){System.err.println("Skipping malformed line: "+sL);}
