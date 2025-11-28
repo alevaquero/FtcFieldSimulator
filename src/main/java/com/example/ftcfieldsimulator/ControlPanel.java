@@ -217,8 +217,8 @@ public class ControlPanel extends VBox {
         moveSpeedField.setTooltip(new Tooltip("The robot's general speed (0.0 to 1.0) when moving to this point."));
         turnSpeedField.setTooltip(new Tooltip("The robot's general turning speed (0.0 to 1.0) when correcting its heading for this point."));
         followDistanceField.setTooltip(new Tooltip("The 'look-ahead' distance in inches. The robot aims for a point on the path this far ahead of its current position."));
-        slowDownTurnDegreesField.setTooltip(new Tooltip("If the angle to the next turn is less than this value (in degrees), the robot will begin to slow down."));
-        slowDownTurnAmountField.setTooltip(new Tooltip("The factor (0.0 to 1.0) by which to reduce the move speed when slowing down for a turn. 0.0 is a full stop, 1.0 is no slowdown."));
+        slowDownTurnDegreesField.setTooltip(new Tooltip("The turn error (in degrees) where the robot starts to slow down its forward movement to prioritize turning. Smaller values make the robot turn more cautiously around corners."));
+        slowDownTurnAmountField.setTooltip(new Tooltip("How much to slow down (from 0.0 to 1.0) when turning sharply. A value of 1.0 allows the robot to stop and turn in place. A value of 0.0 disables this feature."));
 
         paramTextFieldsList = Arrays.asList(
                 moveSpeedField, turnSpeedField, followDistanceField,
