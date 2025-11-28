@@ -501,29 +501,24 @@ public class PlotDisplay extends Pane {
             int visibilityKey = type.contains("2") ? style + 1000 : style;
             boolean isVisible = seriesVisibility.getOrDefault(visibilityKey, true);
 
-            // --- Draw the CheckBox ---
-            // Outer box
-            gc.setStroke(Color.BLACK);
-            gc.setLineWidth(1.0);
-            gc.strokeRect(currentX, y - checkboxSize / 2, checkboxSize, checkboxSize);
-
-            // Inner check mark if visible
-            if (isVisible) {
-                gc.setStroke(Color.GREEN.darker());
-                gc.setLineWidth(2.0);
-                gc.strokeLine(currentX + 3, y, currentX + 6, y + 3);
-                gc.strokeLine(currentX + 6, y + 3, currentX + 10, y - 1);
-            }
-
+            // The start of the clickable item is now the start of the line sample.
             double itemStartX = currentX;
-            currentX += checkboxSize + checkboxPadding;
 
             // --- Draw the Line/Point Sample ---
             if (style >= 1 && style <= LINE_STYLES.length) {
                 LineStyle ls = LINE_STYLES[style - 1];
-                gc.setStroke(ls.color);
-                gc.setFill(ls.color);
+
+                // If the series is not visible, draw the sample line/point in gray.
+                if (isVisible) {
+                    gc.setStroke(ls.color);
+                    gc.setFill(ls.color);
+                } else {
+                    gc.setStroke(Color.LIGHTGRAY);
+                    gc.setFill(Color.LIGHTGRAY);
+                }
+
                 gc.setLineWidth(ls.width);
+
                 if (isLine) {
                     gc.setLineDashes(ls.dashArray != null ? ls.dashArray : new double[0]);
                     gc.strokeLine(currentX, y, currentX + sampleLength, y);
@@ -531,29 +526,32 @@ public class PlotDisplay extends Pane {
                     gc.fillOval(currentX + sampleLength / 2 - 2, y - 2, 4, 4);
                 }
 
-                gc.setFill(Color.BLACK);
+                // Reset dashes and line width for text drawing
                 gc.setLineWidth(1.0);
                 gc.setLineDashes(new double[0]);
 
                 String name = entry.getValue();
-                // If not visible, draw text in gray
-                if (!isVisible) {
-                    gc.setFill(Color.GRAY);
-                }
+
+                // Set text color based on visibility
+                gc.setFill(isVisible ? Color.BLACK : Color.GRAY);
+
                 gc.fillText(name, currentX + sampleLength + padding, y + textOffset);
 
                 double textWidth = new javafx.scene.text.Text(name).getLayoutBounds().getWidth();
-                double itemTotalWidth = (currentX - itemStartX) + sampleLength + padding + textWidth + padding;
+                // The total width of the clickable item.
+                double itemTotalWidth = sampleLength + padding + textWidth;
 
-                // Store the bounding box of the entire legend item for click detection
+                // Store the bounding box of the entire legend item for click detection.
+                // The clickable area now starts at the beginning of the line sample.
+                // CORRECTED LINE: Added the 'type' argument back into the constructor call.
                 legendItems.add(new LegendItem(visibilityKey, type, itemStartX, y, itemTotalWidth, checkboxSize + 2));
 
-                currentX += sampleLength + padding + textWidth + padding;
+                // Advance X for the next item
+                currentX += itemTotalWidth + (padding * 2); // Add extra padding between items
             }
         }
         return currentX;
     }
-
 
     private void drawXAxisDecorations() {
         double step = 500; if(pixelsPerMillisecond*step<40) step=1000; if(pixelsPerMillisecond*step<40) step=2000; if(pixelsPerMillisecond*step<40) step=5000;
