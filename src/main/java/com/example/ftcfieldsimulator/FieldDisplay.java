@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 
 import javafx.geometry.Point2D;
 import javafx.geometry.VPos;
@@ -113,6 +114,15 @@ public class FieldDisplay extends Pane {
     private static final double LABEL_OFFSET_PIXELS = 15.0; // Offset for "X", "Y" labels from axis end
     private static final double NUMBER_OFFSET_PIXELS = 8.0; // Offset for numbers from ticks
 
+    // --- State and callbacks for Draggable Points ---
+    private CurvePoint hoveredPoint = null;
+    private CurvePoint draggedPoint = null;
+    private int draggedPointIndex = -1;
+    private static final double POINT_GRAB_RADIUS_PIXELS = 10.0;
+
+    private BiConsumer<Integer, Point2D> onPointDrag;
+    private Consumer<Integer> onPointDragEnd;
+
     public FieldDisplay(int canvasWidthPixels, int canvasHeightPixels,
                         double fieldWidthInches,  // This is for the field's HORIZONTAL extent (new Y-axis)
                         double fieldHeightInches, // This is for the field's VERTICAL extent (new X-axis)
@@ -156,6 +166,7 @@ public class FieldDisplay extends Pane {
     }
 
     private void setupMouseHandlers() {
+        // --- MOUSE CLICKED ---
         this.canvas.addEventHandler(MouseEvent.MOUSE_CLICKED, event -> {
             if (!canvas.isFocused()) {
                 canvas.requestFocus();
@@ -173,23 +184,156 @@ public class FieldDisplay extends Pane {
             }
         });
 
-        this.canvas.addEventHandler(MouseEvent.MOUSE_MOVED, event -> {
-            Point2D fieldCoords = pixelToInches(event.getX(), event.getY()); // Returns (FieldX, FieldY)
-            coordinateLabel.setText(String.format("X: %.1f, Y: %.1f", fieldCoords.getX(), fieldCoords.getY()));
-            double labelOffsetX = 15;
-            double labelOffsetY = 15;
-            double newX = Math.min(event.getX() + labelOffsetX, canvas.getWidth() - coordinateLabel.prefWidth(-1) - 5);
-            newX = Math.max(5, newX);
-            double newY = Math.min(event.getY() + labelOffsetY, canvas.getHeight() - coordinateLabel.prefHeight(-1) - 5);
-            newY = Math.max(5, newY);
-            coordinateLabel.setLayoutX(newX);
-            coordinateLabel.setLayoutY(newY);
-            coordinateLabel.setVisible(true);
+        // --- MOUSE PRESSED (To start a drag) ---
+        this.canvas.addEventHandler(MouseEvent.MOUSE_PRESSED, event -> {
+            if (hoveredPoint != null && !isPathCreationMode && event.isPrimaryButtonDown()) {
+                draggedPoint = hoveredPoint;
+                draggedPointIndex = currentPathToDraw.indexOf(draggedPoint);
+                canvas.setCursor(Cursor.MOVE);
+                event.consume();
+            }
         });
 
-        this.canvas.addEventHandler(MouseEvent.MOUSE_EXITED, event -> {
-            if (isPathCreationMode) coordinateLabel.setVisible(false);
+        // --- MOUSE DRAGGED (To move the point) ---
+        this.canvas.addEventHandler(MouseEvent.MOUSE_DRAGGED, event -> {
+            if (draggedPoint != null) {
+                // Update the coordinate label to follow the mouse during the drag
+                updateCoordinateLabel(event);
+
+                Point2D newInchesCoords = pixelToInches(event.getX(), event.getY());
+                draggedPoint.x = newInchesCoords.getX();
+                draggedPoint.y = newInchesCoords.getY();
+
+                if (onPointDrag != null) {
+                    onPointDrag.accept(draggedPointIndex, newInchesCoords);
+                }
+                drawCurrentState();
+                event.consume();
+            }
         });
+
+        // --- MOUSE RELEASED (To end a drag) ---
+        this.canvas.addEventHandler(MouseEvent.MOUSE_RELEASED, event -> {
+            if (draggedPoint != null) {
+                if (onPointDragEnd != null) {
+                    onPointDragEnd.accept(draggedPointIndex);
+                }
+                draggedPoint = null;
+                draggedPointIndex = -1;
+                // Re-evaluate hover state after releasing
+                handleMouseMoved(event);
+                event.consume();
+            }
+        });
+
+        // --- MOUSE MOVED ---
+        this.canvas.addEventHandler(MouseEvent.MOUSE_MOVED, this::handleMouseMoved);
+
+//        this.canvas.addEventHandler(MouseEvent.MOUSE_MOVED, event -> {
+//            Point2D fieldCoords = pixelToInches(event.getX(), event.getY()); // Returns (FieldX, FieldY)
+//            coordinateLabel.setText(String.format("X: %.1f, Y: %.1f", fieldCoords.getX(), fieldCoords.getY()));
+//            double labelOffsetX = 15;
+//            double labelOffsetY = 15;
+//            double newX = Math.min(event.getX() + labelOffsetX, canvas.getWidth() - coordinateLabel.prefWidth(-1) - 5);
+//            newX = Math.max(5, newX);
+//            double newY = Math.min(event.getY() + labelOffsetY, canvas.getHeight() - coordinateLabel.prefHeight(-1) - 5);
+//            newY = Math.max(5, newY);
+//            coordinateLabel.setLayoutX(newX);
+//            coordinateLabel.setLayoutY(newY);
+//            coordinateLabel.setVisible(true);
+//        });
+
+        // --- MOUSE EXITED ---
+        this.canvas.addEventHandler(MouseEvent.MOUSE_EXITED, event -> {
+            coordinateLabel.setVisible(false);
+            if (hoveredPoint != null) {
+                hoveredPoint = null;
+                canvas.setCursor(Cursor.DEFAULT);
+                drawCurrentState(); // Redraw to remove hover effect
+            }
+        });
+
+//        this.canvas.addEventHandler(MouseEvent.MOUSE_EXITED, event -> {
+//            if (isPathCreationMode) coordinateLabel.setVisible(false);
+//        });
+    }
+
+    private void handleMouseMoved(MouseEvent event) {
+        updateCoordinateLabel(event);
+
+//        // Update coordinate label (from original MOUSE_MOVED handler)
+//        Point2D fieldCoords = pixelToInches(event.getX(), event.getY());
+//        coordinateLabel.setText(String.format("X: %.1f, Y: %.1f", fieldCoords.getX(), fieldCoords.getY()));
+//        double labelOffsetX = 15;
+//        double labelOffsetY = 15;
+//        double newX = Math.min(event.getX() + labelOffsetX, canvas.getWidth() - coordinateLabel.prefWidth(-1) - 5);
+//        newX = Math.max(5, newX);
+//        double newY = Math.min(event.getY() + labelOffsetY, canvas.getHeight() - coordinateLabel.prefHeight(-1) - 5);
+//        newY = Math.max(5, newY);
+//        coordinateLabel.setLayoutX(newX);
+//        coordinateLabel.setLayoutY(newY);
+//        coordinateLabel.setVisible(true);
+
+        // Hover detection logic
+        if (isPathCreationMode || draggedPoint != null) {
+            return; // Don't check for hovers while creating path or dragging
+        }
+
+        CurvePoint previouslyHovered = hoveredPoint;
+        hoveredPoint = findNearbyPoint(event.getX(), event.getY());
+
+        if (hoveredPoint != null) {
+            canvas.setCursor(Cursor.MOVE);
+        } else {
+            canvas.setCursor(Cursor.DEFAULT);
+        }
+
+        if (previouslyHovered != hoveredPoint) {
+            drawCurrentState(); // Redraw only if hover state changes
+        }
+    }
+
+    /**
+     * Updates the text and position of the coordinate label based on a mouse event.
+     * @param event The MouseEvent containing the cursor's current position.
+     */
+    private void updateCoordinateLabel(MouseEvent event) {
+        Point2D fieldCoords = pixelToInches(event.getX(), event.getY());
+        coordinateLabel.setText(String.format("X: %.1f, Y: %.1f", fieldCoords.getX(), fieldCoords.getY()));
+
+        double labelOffsetX = 15;
+        double labelOffsetY = 15;
+        double newX = Math.min(event.getX() + labelOffsetX, canvas.getWidth() - coordinateLabel.prefWidth(-1) - 5);
+        newX = Math.max(5, newX);
+        double newY = Math.min(event.getY() + labelOffsetY, canvas.getHeight() - coordinateLabel.prefHeight(-1) - 5);
+        newY = Math.max(5, newY);
+
+        coordinateLabel.setLayoutX(newX);
+        coordinateLabel.setLayoutY(newY);
+        coordinateLabel.setVisible(true);
+    }
+
+    // --- Setter methods for the callbacks ---
+    public void setOnPointDrag(BiConsumer<Integer, Point2D> handler) {
+        this.onPointDrag = handler;
+    }
+
+    public void setOnPointDragEnd(Consumer<Integer> handler) {
+        this.onPointDragEnd = handler;
+    }
+
+    // --- NEW: Helper method to find a point near the mouse ---
+    private CurvePoint findNearbyPoint(double mouseX, double mouseY) {
+        if (currentPathToDraw == null) return null;
+        for (CurvePoint point : currentPathToDraw) {
+            double pointCanvasX = fieldYtoCanvasX(point.y);
+            double pointCanvasY = fieldXtoCanvasY(point.x);
+            double distance = Math.hypot(mouseX - pointCanvasX, mouseY - pointCanvasY);
+            if (distance <= POINT_GRAB_RADIUS_PIXELS) {
+                return point;
+            }
+        }
+        return null;
     }
 
     public void addDebugCircle(double fieldX_inches, double fieldY_inches, double radiusInches, double headingDegrees, Color color) {
@@ -374,85 +518,41 @@ public class FieldDisplay extends Pane {
     }
 
     public void clearTrail() { robotTrailDots.clear(); }
-//    public void clearTrailDots() { robotTrailDots.clear(); } // Alias
-//    public void setPath(List<Position> path) { this.currentPath = (path != null) ? new ArrayList<>(path) : new ArrayList<>();}
 
-    // In FieldDisplay.java, REPLACE the entire method with this one.
+
+// In FieldDisplay.java, replace the entire drawCurrentState() method with this one.
 
     public void drawCurrentState() {
+        // 1. Clear and Draw the basic field background and image
         gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
         gc.setFill(Color.rgb(50, 50, 50, this.backgroundAlpha));
         gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
 
-        // Draw the field image
         if (fieldImage != null) {
             gc.setGlobalAlpha(this.fieldImageAlpha);
             gc.drawImage(fieldImage, 0, 0, canvas.getWidth(), canvas.getHeight());
             gc.setGlobalAlpha(1.0); // Reset alpha
         }
 
-        // Draw axes
+        // 2. Draw the axes on top of the field image
         drawFieldAxes(gc);
 
-        // Draw the path being created/displayed
-        if (currentPathToDraw != null && !currentPathToDraw.isEmpty()) {
-            gc.setStroke(isPathCreationMode ? Color.CYAN : Color.MAGENTA);
-            gc.setLineWidth(2);
-            // Draw lines between points
-            if (currentPathToDraw.size() > 1) { // Need at least two points to draw a line
-                for (int i = 0; i < currentPathToDraw.size() - 1; i++) {
-                    CurvePoint p1 = currentPathToDraw.get(i); // Type is CurvePoint
-                    CurvePoint p2 = currentPathToDraw.get(i + 1); // Type is CurvePoint
-                    gc.strokeLine(fieldYtoCanvasX(p1.y), fieldXtoCanvasY(p1.x),
-                            fieldYtoCanvasX(p2.y), fieldXtoCanvasY(p2.x));
-                }
-            }
-            // Draw circles at each point
-            gc.setFill(Color.RED);
-            for (CurvePoint p : currentPathToDraw) { // Iterate CurvePoint
-                double canvasX = fieldYtoCanvasX(p.y);
-                double canvasY = fieldXtoCanvasY(p.x);
-                gc.fillOval(canvasX - 4, canvasY - 4, 8, 8); // Draw a small circle for each point
-            }
-        }
-
-        // Draw the highlighted point (if any)
-        if (highlightedPoint != null) {
-            gc.setFill(Color.YELLOW); // Or another distinct highlight color
-            gc.setStroke(Color.BLACK); // Optional: add a border to the highlight
-            gc.setLineWidth(1.5);      // Optional: border width
-
-            double canvasX = fieldYtoCanvasX(highlightedPoint.y);
-            double canvasY = fieldXtoCanvasY(highlightedPoint.x);
-            double highlightRadius = 6; // Make it slightly larger than normal points
-
-            gc.fillOval(canvasX - highlightRadius, canvasY - highlightRadius, highlightRadius * 2, highlightRadius * 2);
-            // gc.strokeOval(canvasX - highlightRadius, canvasY - highlightRadius, highlightRadius * 2, highlightRadius * 2); // Optional border
-        }
-
-        // Draw Robot Image
-        double robotCanvasPixelX = 0; // robot's center X on canvas (horizontal)
-        double robotCanvasPixelY = 0; // robot's center Y on canvas (vertical)
-
+        // --- NEW DRAWING ORDER ---
+        // 3. Draw the robot image FIRST
         if (robot != null) {
             Image robotImg = robot.getRobotImage();
-            double robotFieldX_vertical = robot.getXInches();    // Robot's Field X (vertical)
-            double robotFieldY_horizontal = robot.getYInches();  // Robot's Field Y (horizontal)
+            double robotFieldX_vertical = robot.getXInches();
+            double robotFieldY_horizontal = robot.getYInches();
 
-            robotCanvasPixelX = fieldYtoCanvasX(robotFieldY_horizontal);
-            robotCanvasPixelY = fieldXtoCanvasY(robotFieldX_vertical);
+            double robotCanvasPixelX = fieldYtoCanvasX(robotFieldY_horizontal);
+            double robotCanvasPixelY = fieldXtoCanvasY(robotFieldX_vertical);
 
-            // Robot.ROBOT_WIDTH_INCHES: robot's extent along its own local Y-axis (which aligns with Field Y when heading=0)
-            // Robot.ROBOT_HEIGHT_INCHES: robot's extent along its own local X-axis (which aligns with Field X when heading=0)
-            // These become the display width/height on canvas *before* rotation.
             double robotDisplayWidthOnCanvas = Robot.ROBOT_WIDTH_INCHES * scaleForFieldY_Horizontal;
             double robotDisplayHeightOnCanvas = Robot.ROBOT_HEIGHT_INCHES * scaleForFieldX_Vertical;
 
-//            double robotHeadingDegrees = robot.getHeadingDegrees(); // 0 degrees = points +FieldX (down screen)
-            double robotHeadingDegrees_CCW = robot.getHeadingDegrees(); // This is your CCW angle (0 deg = +FieldX/Down)
+            double robotHeadingDegrees_CCW = robot.getHeadingDegrees();
 
             gc.save();
-            // JavaFX Rotate: positive angle is Clockwise. Pivot is robot's canvas center.
             Rotate rotateTransform = new Rotate(-robotHeadingDegrees_CCW, robotCanvasPixelX, robotCanvasPixelY);
             gc.setTransform(
                     rotateTransform.getMxx(), rotateTransform.getMyx(),
@@ -469,12 +569,55 @@ public class FieldDisplay extends Pane {
             gc.restore();
         }
 
-        // Draw Named, Styled Lines
+        // 4. Draw the robot trail on top of the robot
+        gc.setFill(Color.YELLOW);
+        synchronized (robotTrailDots) {
+            for (Point2D dot : robotTrailDots) {
+                gc.fillOval(dot.getX() - TRAIL_DOT_RADIUS_PIXELS / 2, dot.getY() - TRAIL_DOT_RADIUS_PIXELS / 2, TRAIL_DOT_RADIUS_PIXELS, TRAIL_DOT_RADIUS_PIXELS);
+            }
+        }
+
+        // 5. Draw the main path and waypoints on top of the trail and robot
+        if (currentPathToDraw != null && !currentPathToDraw.isEmpty()) {
+            gc.setStroke(isPathCreationMode ? Color.CYAN : Color.MAGENTA);
+            gc.setLineWidth(2);
+            if (currentPathToDraw.size() > 1) {
+                for (int i = 0; i < currentPathToDraw.size() - 1; i++) {
+                    CurvePoint p1 = currentPathToDraw.get(i);
+                    CurvePoint p2 = currentPathToDraw.get(i + 1);
+                    gc.strokeLine(fieldYtoCanvasX(p1.y), fieldXtoCanvasY(p1.x),
+                            fieldYtoCanvasX(p2.y), fieldXtoCanvasY(p2.x));
+                }
+            }
+
+            // Draw waypoints with hover/drag effects
+            for (CurvePoint p : currentPathToDraw) {
+                double canvasX = fieldYtoCanvasX(p.y);
+                double canvasY = fieldXtoCanvasY(p.x);
+                double pointSize = 8.0;
+                Color pointColor = Color.RED;
+
+                if (p == draggedPoint) {
+                    pointSize = 12.0;
+                    pointColor = Color.DODGERBLUE;
+                } else if (p == hoveredPoint) {
+                    pointSize = 12.0;
+                    pointColor = Color.GOLD;
+                } else if (p == highlightedPoint) {
+                    pointSize = 12.0;
+                    pointColor = Color.YELLOW;
+                }
+
+                gc.setFill(pointColor);
+                gc.fillOval(canvasX - pointSize / 2, canvasY - pointSize / 2, pointSize, pointSize);
+            }
+        }
+
+        // 6. Draw all other debug info (lines, circles, text) on top of everything else
         final Color styleThickColor = Color.CYAN.deriveColor(0, 1, 1, 0.9);
         final Color styleThinColor = Color.LIMEGREEN.deriveColor(0, 1, 1, 0.8);
         final Color styleDottedColor = Color.LIGHTPINK.deriveColor(0, 1, 1, 0.85);
 
-        // To prevent concurrent modification errors, copy the values to a temporary list before drawing.
         List<UdpPositionListener.LineData> linesToRender;
         synchronized (namedLinesMapLock) {
             linesToRender = new ArrayList<>(namedLinesMap.values());
@@ -483,17 +626,12 @@ public class FieldDisplay extends Pane {
         if (linesToRender != null) {
             for (UdpPositionListener.LineData line : linesToRender) {
                 if (line == null) continue;
-
-                // Convert the integer style code from the data packet into your LineStyle enum
                 LineStyle style = LineStyle.fromCode(line.styleCode);
-
-                // Use the correct field names: x1, y1, x2, y2
                 double canvasX1 = fieldYtoCanvasX(line.y1);
                 double canvasY1 = fieldXtoCanvasY(line.x1);
                 double canvasX2 = fieldYtoCanvasX(line.y2);
                 double canvasY2 = fieldXtoCanvasY(line.x2);
 
-                // Apply styles based on the enum
                 switch (style) {
                     case SOLID_THICK:
                         gc.setStroke(styleThickColor);
@@ -512,21 +650,12 @@ public class FieldDisplay extends Pane {
                         gc.setLineWidth(1.5);
                         gc.setLineDashes(5, 5);
                         gc.strokeLine(canvasX1, canvasY1, canvasX2, canvasY2);
-                        gc.setLineDashes(0); // Reset dashes for other drawing
+                        gc.setLineDashes(0);
                         break;
                 }
             }
         }
 
-        // Draw robot trail
-        gc.setFill(Color.YELLOW);
-        synchronized (robotTrailDots) {
-            for (Point2D dot : robotTrailDots) {
-                gc.fillOval(dot.getX() - TRAIL_DOT_RADIUS_PIXELS / 2, dot.getY() - TRAIL_DOT_RADIUS_PIXELS / 2, TRAIL_DOT_RADIUS_PIXELS, TRAIL_DOT_RADIUS_PIXELS);
-            }
-        }
-
-        // Draw robot text message
         synchronized (robotTextLock) {
             if (currentRobotTextMessage != null && !currentRobotTextMessage.isEmpty() && robot != null) {
                 gc.save();
@@ -551,38 +680,269 @@ public class FieldDisplay extends Pane {
             }
         }
 
-        // --- Draw Debug Circle as an Outline with a Heading Line ---
         synchronized (debugCircleLock) {
             if (currentDebugCircle != null) {
                 gc.save();
                 double canvasX = fieldYtoCanvasX(currentDebugCircle.fieldY);
                 double canvasY = fieldXtoCanvasY(currentDebugCircle.fieldX);
-
-                double radiusInches = currentDebugCircle.radiusInches;
-                double radiusPixels = radiusInches * scaleForFieldY_Horizontal;
-
-                // 1. Set the STROKE color and line width for the circle
+                double radiusPixels = currentDebugCircle.radiusInches * scaleForFieldY_Horizontal;
                 Color cColor = currentDebugCircle.color != null ? currentDebugCircle.color : Color.ORANGE;
                 gc.setStroke(cColor);
-                gc.setLineWidth(2.0); // A visible line width
-
-                // 2. Use strokeOval to draw the outline (circumference)
+                gc.setLineWidth(2.0);
                 gc.strokeOval(canvasX - radiusPixels, canvasY - radiusPixels, radiusPixels * 2, radiusPixels * 2);
-
-                // 3. Draw the heading line from the center to the edge
-                // It will automatically use the same stroke color and width set above
-//                double headingRad_Canvas = Math.toRadians(90 - currentDebugCircle.headingDegrees);
                 double headingRad_Canvas = Math.toRadians(90 + currentDebugCircle.headingDegrees);
-
                 gc.strokeLine(
-                        canvasX, // from center X
-                        canvasY, // from center Y
-                        canvasX + radiusPixels * Math.cos(headingRad_Canvas), // to edge X
-                        canvasY - radiusPixels * Math.sin(headingRad_Canvas)  // to edge Y
+                        canvasX,
+                        canvasY,
+                        canvasX + radiusPixels * Math.cos(headingRad_Canvas),
+                        canvasY - radiusPixels * Math.sin(headingRad_Canvas)
                 );
-
                 gc.restore();
             }
         }
     }
+
+
+//    public void drawCurrentState() {
+//        gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+//        gc.setFill(Color.rgb(50, 50, 50, this.backgroundAlpha));
+//        gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
+//
+//        // Draw the field image
+//        if (fieldImage != null) {
+//            gc.setGlobalAlpha(this.fieldImageAlpha);
+//            gc.drawImage(fieldImage, 0, 0, canvas.getWidth(), canvas.getHeight());
+//            gc.setGlobalAlpha(1.0); // Reset alpha
+//        }
+//
+//        // Draw axes
+//        drawFieldAxes(gc);
+//
+//        // --- path drawing logic ---
+//        if (currentPathToDraw != null && !currentPathToDraw.isEmpty()) {
+//            gc.setStroke(isPathCreationMode ? Color.CYAN : Color.MAGENTA);
+//            gc.setLineWidth(2);
+//            if (currentPathToDraw.size() > 1) {
+//                for (int i = 0; i < currentPathToDraw.size() - 1; i++) {
+//                    CurvePoint p1 = currentPathToDraw.get(i);
+//                    CurvePoint p2 = currentPathToDraw.get(i + 1);
+//                    gc.strokeLine(fieldYtoCanvasX(p1.y), fieldXtoCanvasY(p1.x),
+//                            fieldYtoCanvasX(p2.y), fieldXtoCanvasY(p2.x));
+//                }
+//            }
+//
+//            // Draw waypoints with hover/drag effects
+//            for (CurvePoint p : currentPathToDraw) {
+//                double canvasX = fieldYtoCanvasX(p.y);
+//                double canvasY = fieldXtoCanvasY(p.x);
+//                double pointSize = 8.0;
+//                Color pointColor = Color.RED;
+//
+//                if (p == draggedPoint) {
+//                    pointSize = 12.0;
+//                    pointColor = Color.DODGERBLUE;
+//                } else if (p == hoveredPoint) {
+//                    pointSize = 12.0;
+//                    pointColor = Color.GOLD;
+//                } else if (p == highlightedPoint) {
+//                    pointSize = 12.0;
+//                    pointColor = Color.YELLOW;
+//                }
+//
+//                gc.setFill(pointColor);
+//                gc.fillOval(canvasX - pointSize / 2, canvasY - pointSize / 2, pointSize, pointSize);
+//            }
+//        }
+//
+////        // Draw the path being created/displayed
+////        if (currentPathToDraw != null && !currentPathToDraw.isEmpty()) {
+////            gc.setStroke(isPathCreationMode ? Color.CYAN : Color.MAGENTA);
+////            gc.setLineWidth(2);
+////            // Draw lines between points
+////            if (currentPathToDraw.size() > 1) { // Need at least two points to draw a line
+////                for (int i = 0; i < currentPathToDraw.size() - 1; i++) {
+////                    CurvePoint p1 = currentPathToDraw.get(i); // Type is CurvePoint
+////                    CurvePoint p2 = currentPathToDraw.get(i + 1); // Type is CurvePoint
+////                    gc.strokeLine(fieldYtoCanvasX(p1.y), fieldXtoCanvasY(p1.x),
+////                            fieldYtoCanvasX(p2.y), fieldXtoCanvasY(p2.x));
+////                }
+////            }
+////            // Draw circles at each point
+////            gc.setFill(Color.RED);
+////            for (CurvePoint p : currentPathToDraw) { // Iterate CurvePoint
+////                double canvasX = fieldYtoCanvasX(p.y);
+////                double canvasY = fieldXtoCanvasY(p.x);
+////                gc.fillOval(canvasX - 4, canvasY - 4, 8, 8); // Draw a small circle for each point
+////            }
+////        }
+//
+////        // Draw the highlighted point (if any)
+////        if (highlightedPoint != null) {
+////            gc.setFill(Color.YELLOW); // Or another distinct highlight color
+////            gc.setStroke(Color.BLACK); // Optional: add a border to the highlight
+////            gc.setLineWidth(1.5);      // Optional: border width
+////
+////            double canvasX = fieldYtoCanvasX(highlightedPoint.y);
+////            double canvasY = fieldXtoCanvasY(highlightedPoint.x);
+////            double highlightRadius = 6; // Make it slightly larger than normal points
+////
+////            gc.fillOval(canvasX - highlightRadius, canvasY - highlightRadius, highlightRadius * 2, highlightRadius * 2);
+////            // gc.strokeOval(canvasX - highlightRadius, canvasY - highlightRadius, highlightRadius * 2, highlightRadius * 2); // Optional border
+////        }
+//
+//        // Draw Robot Image
+//        double robotCanvasPixelX = 0; // robot's center X on canvas (horizontal)
+//        double robotCanvasPixelY = 0; // robot's center Y on canvas (vertical)
+//
+//        if (robot != null) {
+//            Image robotImg = robot.getRobotImage();
+//            double robotFieldX_vertical = robot.getXInches();    // Robot's Field X (vertical)
+//            double robotFieldY_horizontal = robot.getYInches();  // Robot's Field Y (horizontal)
+//
+//            robotCanvasPixelX = fieldYtoCanvasX(robotFieldY_horizontal);
+//            robotCanvasPixelY = fieldXtoCanvasY(robotFieldX_vertical);
+//
+//            // Robot.ROBOT_WIDTH_INCHES: robot's extent along its own local Y-axis (which aligns with Field Y when heading=0)
+//            // Robot.ROBOT_HEIGHT_INCHES: robot's extent along its own local X-axis (which aligns with Field X when heading=0)
+//            // These become the display width/height on canvas *before* rotation.
+//            double robotDisplayWidthOnCanvas = Robot.ROBOT_WIDTH_INCHES * scaleForFieldY_Horizontal;
+//            double robotDisplayHeightOnCanvas = Robot.ROBOT_HEIGHT_INCHES * scaleForFieldX_Vertical;
+//
+////            double robotHeadingDegrees = robot.getHeadingDegrees(); // 0 degrees = points +FieldX (down screen)
+//            double robotHeadingDegrees_CCW = robot.getHeadingDegrees(); // This is your CCW angle (0 deg = +FieldX/Down)
+//
+//            gc.save();
+//            // JavaFX Rotate: positive angle is Clockwise. Pivot is robot's canvas center.
+//            Rotate rotateTransform = new Rotate(-robotHeadingDegrees_CCW, robotCanvasPixelX, robotCanvasPixelY);
+//            gc.setTransform(
+//                    rotateTransform.getMxx(), rotateTransform.getMyx(),
+//                    rotateTransform.getMxy(), rotateTransform.getMyy(),
+//                    rotateTransform.getTx(), rotateTransform.getTy()
+//            );
+//            gc.drawImage(
+//                    robotImg,
+//                    robotCanvasPixelX - robotDisplayWidthOnCanvas / 2.0,
+//                    robotCanvasPixelY - robotDisplayHeightOnCanvas / 2.0,
+//                    robotDisplayWidthOnCanvas,
+//                    robotDisplayHeightOnCanvas
+//            );
+//            gc.restore();
+//        }
+//
+//        // Draw Named, Styled Lines
+//        final Color styleThickColor = Color.CYAN.deriveColor(0, 1, 1, 0.9);
+//        final Color styleThinColor = Color.LIMEGREEN.deriveColor(0, 1, 1, 0.8);
+//        final Color styleDottedColor = Color.LIGHTPINK.deriveColor(0, 1, 1, 0.85);
+//
+//        // To prevent concurrent modification errors, copy the values to a temporary list before drawing.
+//        List<UdpPositionListener.LineData> linesToRender;
+//        synchronized (namedLinesMapLock) {
+//            linesToRender = new ArrayList<>(namedLinesMap.values());
+//        }
+//
+//        if (linesToRender != null) {
+//            for (UdpPositionListener.LineData line : linesToRender) {
+//                if (line == null) continue;
+//
+//                // Convert the integer style code from the data packet into your LineStyle enum
+//                LineStyle style = LineStyle.fromCode(line.styleCode);
+//
+//                // Use the correct field names: x1, y1, x2, y2
+//                double canvasX1 = fieldYtoCanvasX(line.y1);
+//                double canvasY1 = fieldXtoCanvasY(line.x1);
+//                double canvasX2 = fieldYtoCanvasX(line.y2);
+//                double canvasY2 = fieldXtoCanvasY(line.x2);
+//
+//                // Apply styles based on the enum
+//                switch (style) {
+//                    case SOLID_THICK:
+//                        gc.setStroke(styleThickColor);
+//                        gc.setLineWidth(3.0);
+//                        gc.setLineDashes(0);
+//                        gc.strokeLine(canvasX1, canvasY1, canvasX2, canvasY2);
+//                        break;
+//                    case SOLID_THIN:
+//                        gc.setStroke(styleThinColor);
+//                        gc.setLineWidth(3.5);
+//                        gc.setLineDashes(0);
+//                        gc.strokeLine(canvasX1, canvasY1, canvasX2, canvasY2);
+//                        break;
+//                    case DOTTED:
+//                        gc.setStroke(styleDottedColor);
+//                        gc.setLineWidth(1.5);
+//                        gc.setLineDashes(5, 5);
+//                        gc.strokeLine(canvasX1, canvasY1, canvasX2, canvasY2);
+//                        gc.setLineDashes(0); // Reset dashes for other drawing
+//                        break;
+//                }
+//            }
+//        }
+//
+//        // Draw robot trail
+//        gc.setFill(Color.YELLOW);
+//        synchronized (robotTrailDots) {
+//            for (Point2D dot : robotTrailDots) {
+//                gc.fillOval(dot.getX() - TRAIL_DOT_RADIUS_PIXELS / 2, dot.getY() - TRAIL_DOT_RADIUS_PIXELS / 2, TRAIL_DOT_RADIUS_PIXELS, TRAIL_DOT_RADIUS_PIXELS);
+//            }
+//        }
+//
+//        // Draw robot text message
+//        synchronized (robotTextLock) {
+//            if (currentRobotTextMessage != null && !currentRobotTextMessage.isEmpty() && robot != null) {
+//                gc.save();
+//                double robotCanvasX = fieldYtoCanvasX(robot.getYInches());
+//                double robotCanvasY = fieldXtoCanvasY(robot.getXInches());
+//                gc.setFont(ROBOT_TEXT_FONT);
+//                gc.setTextAlign(TextAlignment.CENTER);
+//                gc.setTextBaseline(VPos.TOP);
+//                double textWidth = new javafx.scene.text.Text(currentRobotTextMessage).getLayoutBounds().getWidth();
+//                double textHeight = new javafx.scene.text.Text(currentRobotTextMessage).getLayoutBounds().getHeight();
+//                gc.setFill(ROBOT_TEXT_BACKGROUND_COLOR);
+//                gc.fillRoundRect(
+//                        robotCanvasX - (textWidth / 2) - ROBOT_TEXT_PADDING,
+//                        robotCanvasY + ROBOT_TEXT_Y_CANVAS_OFFSET_PIXELS - ROBOT_TEXT_PADDING,
+//                        textWidth + (ROBOT_TEXT_PADDING * 2),
+//                        textHeight + (ROBOT_TEXT_PADDING * 2),
+//                        5, 5
+//                );
+//                gc.setFill(ROBOT_TEXT_COLOR);
+//                gc.fillText(currentRobotTextMessage, robotCanvasX, robotCanvasY + ROBOT_TEXT_Y_CANVAS_OFFSET_PIXELS);
+//                gc.restore();
+//            }
+//        }
+//
+//        // --- Draw Debug Circle as an Outline with a Heading Line ---
+//        synchronized (debugCircleLock) {
+//            if (currentDebugCircle != null) {
+//                gc.save();
+//                double canvasX = fieldYtoCanvasX(currentDebugCircle.fieldY);
+//                double canvasY = fieldXtoCanvasY(currentDebugCircle.fieldX);
+//
+//                double radiusInches = currentDebugCircle.radiusInches;
+//                double radiusPixels = radiusInches * scaleForFieldY_Horizontal;
+//
+//                // 1. Set the STROKE color and line width for the circle
+//                Color cColor = currentDebugCircle.color != null ? currentDebugCircle.color : Color.ORANGE;
+//                gc.setStroke(cColor);
+//                gc.setLineWidth(2.0); // A visible line width
+//
+//                // 2. Use strokeOval to draw the outline (circumference)
+//                gc.strokeOval(canvasX - radiusPixels, canvasY - radiusPixels, radiusPixels * 2, radiusPixels * 2);
+//
+//                // 3. Draw the heading line from the center to the edge
+//                // It will automatically use the same stroke color and width set above
+////                double headingRad_Canvas = Math.toRadians(90 - currentDebugCircle.headingDegrees);
+//                double headingRad_Canvas = Math.toRadians(90 + currentDebugCircle.headingDegrees);
+//
+//                gc.strokeLine(
+//                        canvasX, // from center X
+//                        canvasY, // from center Y
+//                        canvasX + radiusPixels * Math.cos(headingRad_Canvas), // to edge X
+//                        canvasY - radiusPixels * Math.sin(headingRad_Canvas)  // to edge Y
+//                );
+//
+//                gc.restore();
+//            }
+//        }
+//    }
 }

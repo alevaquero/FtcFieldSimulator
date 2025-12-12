@@ -19,6 +19,15 @@ import javafx.scene.layout.VBox; // NEW IMPORT
 import javafx.scene.paint.Color;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import javafx.scene.control.Alert;
+import javafx.scene.control.TextArea;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.Region;
+import javafx.scene.text.Font;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.Dialog;
+import javafx.scene.control.TextInputDialog;
+import javafx.scene.control.ButtonBar;
 
 import com.example.ftcfieldsimulator.UdpPositionListener.CircleData;
 import com.example.ftcfieldsimulator.UdpPositionListener.KeyValueData;
@@ -45,6 +54,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
+import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class FtcFieldSimulatorApp extends Application {
 
@@ -52,9 +64,8 @@ public class FtcFieldSimulatorApp extends Application {
     private FieldDisplay fieldDisplay;
     private ControlPanel controlPanel;
     private FieldKeyValueTable keyValueTable;
-    private FieldStatusDisplay fieldStatusDisplay; // NEW
+    private FieldStatusDisplay fieldStatusDisplay;
     private Robot robot;
-    // ... (rest of member variables are the same)
     private RecordingManager recordingManager;
     private UdpPositionListener udpListener;
     private Thread udpListenerThread;
@@ -83,8 +94,6 @@ public class FtcFieldSimulatorApp extends Application {
     public static final double ROBOT_START_HEADING_DEGREES = 0.0;
     private static final int UDP_LISTENER_PORT = 7777;
     private static final int ROBOT_LISTENER_PORT = 6666;
-//    private static final String ROBOT_IP_ADDRESS = "192.168.43.1";
-    private static final String ROBOT_IP_ADDRESS = "192.168.56.2"; // When using the Wifi dongle
     private static final double ROBOT_MOVE_INCREMENT_INCHES = 2.0;
     private static final double ROBOT_TURN_INCREMENT_DEGREES = 5.0;
     private static final double MASTER_DEFAULT_MOVE_SPEED = 0.4;
@@ -158,6 +167,7 @@ public class FtcFieldSimulatorApp extends Application {
         setupControlPanelActions(primaryStage);
         setupRecordingControlActions();
         setupParameterFieldListeners();
+        setupFieldDisplayMouseHandlers();
 
         startUdpPositionListener();
         startUdpPlotListener();
@@ -171,7 +181,49 @@ public class FtcFieldSimulatorApp extends Application {
         updateTimeLapsedDisplay();
     }
 
-    // ... (handleUdpMessage and other methods are unchanged, but updateUIFromRobotState is modified below) ...
+    // --- NEW: Add this entire method to the FtcFieldSimulatorApp class ---
+    /**
+     * Sets up the mouse interaction handlers for the FieldDisplay canvas.
+     * This connects the UI events for dragging points to the application logic.
+     */
+    private void setupFieldDisplayMouseHandlers() {
+        if (fieldDisplay == null) return;
+
+        // Handler for while the mouse is being dragged
+        fieldDisplay.setOnPointDrag((index, newCoords) -> {
+            // The point object in currentPath is updated by reference.
+            // We just need to update the UI.
+
+            // If this is the first point, also update the Robot Start fields
+            if (index == 0) {
+                controlPanel.updateRobotStartFields(newCoords.getX(), newCoords.getY(), robot.getHeadingDegrees());
+                // Also update the robot's internal position to match
+                robot.setPosition(newCoords.getX(), newCoords.getY());
+            }
+
+            // Ensure the dragged point is selected in the ComboBox
+            if (controlPanel.getSelectedPointFromComboBox() != currentPath.get(index)) {
+                controlPanel.updatePointSelectionComboBox(currentPath, currentPath.get(index));
+            }
+
+            // Update the parameter text fields to show the new X/Y
+            controlPanel.loadParametersForPoint(currentPath.get(index));
+
+            instructionLabel.setText(String.format(Locale.US, "Dragging Point %d to (X:%.1f, Y:%.1f)",
+                    index + 1, newCoords.getX(), newCoords.getY()));
+        });
+
+        // Handler for when the drag operation ends
+        fieldDisplay.setOnPointDragEnd(index -> {
+            if (index >= 0 && index < currentPath.size()) {
+                CurvePoint point = currentPath.get(index);
+                instructionLabel.setText(String.format(Locale.US, "Moved Point %d.", index + 1));
+
+                // Refresh the ComboBox text to show the new coordinates
+                controlPanel.updatePointSelectionComboBox(currentPath, point);
+            }
+        });
+    }
 
     private void updateUIFromRobotState() {
         if (robot != null && fieldDisplay != null) {
@@ -236,8 +288,8 @@ public class FtcFieldSimulatorApp extends Application {
     private void setupControlPanelActions(Stage ownerStage) {
         controlPanel.setOnNewPathAction(event -> startNewPathCreation());
         controlPanel.setOnDeletePathAction(event -> deleteCurrentPath());
-        controlPanel.setOnExportPathAction(event -> exportPathToCSV(ownerStage));
-        controlPanel.setOnExportCodeAction(event -> exportPathToCode(ownerStage));
+        controlPanel.setOnImportCodeAction(event -> showImportCodeDialog());
+        controlPanel.setOnExportCodeAction(event -> exportPathToCode());
         controlPanel.setOnSendPathAction(event -> handleSendPathToRobot());
         controlPanel.setOnClearTrailAction(event -> {
             fieldDisplay.clearTrail();
@@ -250,6 +302,121 @@ public class FtcFieldSimulatorApp extends Application {
         });
         controlPanel.setOnPointSelectionAction(this::handlePointSelectionChanged);
         controlPanel.setOnShowPlotAction(event -> showPlotDisplay());
+    }
+
+    // --- To show the import dialog ---
+    private void showImportCodeDialog() {
+        Dialog<String> dialog = new Dialog<>();
+        dialog.setTitle("Import Path from Code");
+        dialog.setHeaderText("Paste your Java code snippet below.\nIt should contain 'new CurvePoint(...)' or 'new Pose2D(...)' lines.");
+        dialog.setResizable(true);
+
+        TextArea textArea = new TextArea();
+        textArea.setPromptText("pathToSpike1.add(new CurvePoint(...));");
+        textArea.setFont(Font.font("Consolas", 14));
+        textArea.setPrefHeight(400);
+        textArea.setPrefWidth(650);
+
+        VBox content = new VBox(textArea);
+        VBox.setVgrow(textArea, Priority.ALWAYS);
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().setPrefSize(650, 480);
+
+        ButtonType importButtonType = new ButtonType("Import", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(importButtonType, ButtonType.CANCEL);
+
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == importButtonType) {
+                return textArea.getText();
+            }
+            return null;
+        });
+
+        Optional<String> result = dialog.showAndWait();
+        result.ifPresent(this::parseAndImportPath);
+    }
+
+    // --- NEW METHOD: To parse the pasted code and update the path ---
+    private void parseAndImportPath(String code) {
+        List<CurvePoint> newPath = new ArrayList<>();
+        double startX = -1, startY = -1, startHeading = 0;
+        boolean poseFound = false;
+
+        // Regex to find "new Pose2D(..., X, Y, ..., H)"
+        Pattern posePattern = Pattern.compile("new\\s+Pose2D\\([^,]+,\\s*([\\d\\.\\-]+),\\s*([\\d\\.\\-]+),\\s*[^,]+,\\s*([\\d\\.\\-]+)\\)");
+
+        // Regex to find "new CurvePoint(X, Y, mS, tS, fD, Math.toRadians(sDTd), sDTa)"
+        Pattern curvePointPattern = Pattern.compile(
+                "new\\s+CurvePoint\\(\\s*([\\d\\.\\-]+),\\s*([\\d\\.\\-]+),\\s*([\\d\\.\\-]+)," +
+                        "\\s*([\\d\\.\\-]+),\\s*([\\d\\.\\-]+),\\s*Math\\.toRadians\\(([\\d\\.\\-]+)\\)," +
+                        "\\s*([\\d\\.\\-]+)\\)"
+        );
+
+        String[] lines = code.split("\\r?\\n");
+        for (String line : lines) {
+            // First, try to find a Pose2D line
+            if (!poseFound) {
+                Matcher poseMatcher = posePattern.matcher(line);
+                if (poseMatcher.find()) {
+                    try {
+                        startX = Double.parseDouble(poseMatcher.group(1));
+                        startY = Double.parseDouble(poseMatcher.group(2));
+                        startHeading = Double.parseDouble(poseMatcher.group(3));
+                        poseFound = true;
+                    } catch (NumberFormatException e) {
+                        System.err.println("Could not parse Pose2D line: " + line);
+                    }
+                }
+            }
+
+            // Then, try to find a CurvePoint line
+            Matcher curvePointMatcher = curvePointPattern.matcher(line);
+            if (curvePointMatcher.find()) {
+                try {
+                    double x = Double.parseDouble(curvePointMatcher.group(1));
+                    double y = Double.parseDouble(curvePointMatcher.group(2));
+                    double moveSpeed = Double.parseDouble(curvePointMatcher.group(3));
+                    double turnSpeed = Double.parseDouble(curvePointMatcher.group(4));
+                    double followDistance = Double.parseDouble(curvePointMatcher.group(5));
+                    double slowDownTurnDeg = Double.parseDouble(curvePointMatcher.group(6));
+                    double slowDownTurnAmount = Double.parseDouble(curvePointMatcher.group(7));
+
+                    newPath.add(new CurvePoint(x, y, moveSpeed, turnSpeed, followDistance, Math.toRadians(slowDownTurnDeg), slowDownTurnAmount));
+                } catch (NumberFormatException e) {
+                    System.err.println("Could not parse CurvePoint line: " + line);
+                }
+            }
+        }
+
+        if (newPath.isEmpty()) {
+            instructionLabel.setText("Import failed: No valid 'new CurvePoint(...)' lines found.");
+            return;
+        }
+
+        // --- Apply the new path ---
+        // If no explicit Pose2D was found, use the first point of the path
+        if (!poseFound) {
+            CurvePoint firstPoint = newPath.get(0);
+            startX = firstPoint.x;
+            startY = firstPoint.y;
+            startHeading = 0.0; // Default heading
+        }
+
+        // Replace the current path
+        this.currentPath = newPath;
+
+        // Update robot position and UI fields
+        robot.setPosition(startX, startY, startHeading);
+        controlPanel.updateRobotStartFields(startX, startY, startHeading);
+
+        // Update the rest of the UI
+        fieldDisplay.setPathToDraw(this.currentPath);
+        isCreatingPath = false;
+        controlPanel.setPathEditingActive(false);
+        updateControlPanelForPathState();
+        updateUIFromRobotState(); // Redraws everything
+
+        instructionLabel.setText("Successfully imported " + newPath.size() + " points.");
     }
 
     private void setupParameterFieldListeners() {
@@ -548,13 +715,19 @@ public class FtcFieldSimulatorApp extends Application {
             System.out.println("Attempted to send path, but currentPath is empty.");
             return;
         }
-        instructionLabel.setText("Sending path to robot...");
-        System.out.println("Preparing to send " + currentPath.size() + " points to robot at " + ROBOT_IP_ADDRESS + ":" + ROBOT_LISTENER_PORT);
 
+        // --- Get the selected IP from the Control Panel ---
+        String robotIpAddress = controlPanel.getSelectedIpAddress();
+        if (robotIpAddress == null || robotIpAddress.trim().isEmpty()) {
+            instructionLabel.setText("No Robot IP Address selected!");
+            return;
+        }
+
+        instructionLabel.setText("Sending path to robot...");
+        System.out.println("Preparing to send " + currentPath.size() + " points to robot at " + robotIpAddress + ":" + ROBOT_LISTENER_PORT);
         // This try-with-resources block opens the network socket
         try (DatagramSocket socket = new DatagramSocket()) {
-            InetAddress address = InetAddress.getByName(ROBOT_IP_ADDRESS);
-
+            InetAddress address = InetAddress.getByName(robotIpAddress);
             // --- Get Follow Angle ---
             double followAngle;
             try {
@@ -570,7 +743,7 @@ public class FtcFieldSimulatorApp extends Application {
                 return;
             }
 
-            // --- MODIFIED: Get Start Position FROM THE UI TEXT FIELDS ---
+            // --- Get Start Position FROM THE UI TEXT FIELDS ---
             double startX, startY, startHeading;
             try {
                 startX = Double.parseDouble(controlPanel.getStartXField().getText());
@@ -581,7 +754,6 @@ public class FtcFieldSimulatorApp extends Application {
                 System.err.println("Could not parse Start Position fields. Path sending aborted.");
                 return; // Stop if start position is invalid
             }
-            // --- END MODIFICATION ---
 
             String startPosMessage = String.format(Locale.US, "start_robot_pos:%.3f,%.3f,%.3f", startX, startY, startHeading);
             byte[] startPosBuffer = startPosMessage.getBytes(StandardCharsets.UTF_8);
@@ -608,9 +780,7 @@ public class FtcFieldSimulatorApp extends Application {
             DatagramPacket endPacket = new DatagramPacket(endBuffer, endBuffer.length, address, ROBOT_LISTENER_PORT);
             socket.send(endPacket);
             System.out.println("Sent: " + endMessage);
-
-            instructionLabel.setText("Path sent successfully to " + ROBOT_IP_ADDRESS);
-            System.out.println("Path sending complete.");
+            instructionLabel.setText("Path sent successfully to " + robotIpAddress);            System.out.println("Path sending complete.");
         } catch (IOException e) {
             instructionLabel.setText("Error sending path: " + e.getMessage());
             System.err.println("Error sending path to robot: " + e.getMessage());
@@ -618,125 +788,196 @@ public class FtcFieldSimulatorApp extends Application {
         }
     }
 
-    private void exportPathToCSV(Stage ownerStage) {
-        if (currentPath.isEmpty()) {
+    /**
+     * Handles the logic for exporting the current path to a Java code snippet,
+     * displaying it in a copy-pastable popup window.
+     */
+    private void exportPathToCode() { // The 'ownerStage' parameter is no longer needed
+        if (currentPath == null || currentPath.isEmpty()) {
             instructionLabel.setText("No path to export.");
+            // Show a simple info alert to the user
+            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+            alert.setTitle("Export Code");
+            alert.setHeaderText(null);
+            alert.setContentText("There is no path to export. Please create a path first.");
+            alert.showAndWait();
             return;
         }
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Save Path to CSV");
-        fileChooser.setInitialFileName("ftc_path.csv");
-        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV Files (*.csv)", "*.csv"));
-        File file = fileChooser.showSaveDialog(ownerStage);
-        if (file != null) {
-            try (PrintWriter writer = new PrintWriter(file)) {
-                writer.println("x_inches,y_inches"); // Header
-                for (CurvePoint point : currentPath) {
-                    writer.printf(Locale.US, "%.3f,%.3f\n", point.x, point.y);
-                }
-                instructionLabel.setText("Path exported successfully to " + file.getName());
-            } catch (Exception e) {
-                instructionLabel.setText("Error exporting path: " + e.getMessage());
-                e.printStackTrace();
+
+        // Use a StringBuilder to efficiently build the code string
+        StringBuilder codeBuilder = new StringBuilder();
+
+        try {
+            // --- Get configuration values from the UI ---
+            double followAngleDeg = Double.parseDouble(controlPanel.getFollowAngleField().getText());
+            double startX = Double.parseDouble(controlPanel.getStartXField().getText());
+            double startY = Double.parseDouble(controlPanel.getStartYField().getText());
+            double startHeading = Double.parseDouble(controlPanel.getStartHeadingField().getText());
+
+            // --- Generate the Code String ---
+            codeBuilder.append("// Code generated by FTC Field Simulator\n\n");
+
+            codeBuilder.append("// 1. Set the robot's starting position on the field\n");
+            codeBuilder.append(String.format(Locale.US, "drivetrain.setPosition(new Pose2D(DistanceUnit.INCH, %.2f, %.2f, AngleUnit.DEGREES, %.2f));\n\n", startX, startY, startHeading));
+
+            codeBuilder.append("// 2. Define the path waypoints\n");
+            codeBuilder.append("ArrayList<CurvePoint> pathToFollow = new ArrayList<>();\n");
+
+            for (CurvePoint point : currentPath) {
+                codeBuilder.append(String.format(Locale.US,
+                        "pathToFollow.add(new CurvePoint(%.2f, %.2f, %.2f, %.2f, %.2f, Math.toRadians(%.1f), %.2f));\n",
+                        point.x, point.y,
+                        point.moveSpeed, point.turnSpeed,
+                        point.followDistance,
+                        Math.toDegrees(point.slowDownTurnRadians),
+                        point.slowDownTurnAmount
+                ));
             }
-        } else {
-            instructionLabel.setText("Path export cancelled.");
+            codeBuilder.append("\n");
+
+            codeBuilder.append("// 3. Create and add the command to the scheduler\n");
+            codeBuilder.append("// The 'true' argument enables debug drawing for this path in the simulator.\n");
+            codeBuilder.append(String.format(Locale.US, "scheduler.add(new FollowPathCommand(pathToFollow, Math.toRadians(%.1f), true));\n", followAngleDeg));
+
+        } catch (NumberFormatException e) {
+            instructionLabel.setText("Invalid parameters in UI fields! Could not generate code.");
+            Alert alert = new Alert(Alert.AlertType.ERROR);
+            alert.setTitle("Export Error");
+            alert.setHeaderText("Invalid Number Format");
+            alert.setContentText("Could not generate code because one of the path parameter fields (like Follow Angle or Start Position) contains invalid text.\n\nError: " + e.getMessage());
+            alert.showAndWait();
+            return;
         }
+
+        // --- Create and show the popup window ---
+        showCodePopup(codeBuilder.toString());
+        instructionLabel.setText("Code generated. See popup window to copy.");
     }
 
     /**
-     * Handles the logic for exporting the current path to a Java code snippet file.
-     * @param ownerStage The main stage, used as the owner for the file chooser dialog.
+     * Creates and displays a modal dialog containing the generated Java code.
+     * @param code The string of Java code to display.
      */
-    private void exportPathToCode(Stage ownerStage) {
-        if (currentPath == null || currentPath.isEmpty()) {
-            instructionLabel.setText("No path to export.");
-            return;
-        }
+    private void showCodePopup(String code) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Exported Java Code");
+        alert.setHeaderText("Copy the code below and paste it into your OpMode.");
+        alert.setResizable(true);
 
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Export Path to Java Code");
-        fileChooser.setInitialFileName("MyAutonomousPath.java"); // Suggest a .java file name
-        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Java Files (*.java)", "*.java"));
-        File file = fileChooser.showSaveDialog(ownerStage);
+        TextArea textArea = new TextArea(code);
+        textArea.setEditable(false);
+        textArea.setWrapText(false); // Keep formatting clean
+        textArea.setFont(Font.font("Consolas", 14)); // Use a monospace font for code
 
-        if (file != null) {
-            try (PrintWriter writer = new PrintWriter(file)) {
-                // --- Get configuration values from the UI ---
-                double followAngleDeg;
-                try {
-                    followAngleDeg = Double.parseDouble(controlPanel.getFollowAngleField().getText());
-                } catch (NumberFormatException e) {
-                    instructionLabel.setText("Invalid Follow Angle! Using 90 deg for export.");
-                    followAngleDeg = 90.0; // Fallback to a safe default
-                }
+        // Set preferred size for the TextArea
+        textArea.setPrefHeight(400);
+        textArea.setPrefWidth(650);
 
-                double startX, startY, startHeading;
-                try {
-                    startX = Double.parseDouble(controlPanel.getStartXField().getText());
-                    startY = Double.parseDouble(controlPanel.getStartYField().getText());
-                    startHeading = Double.parseDouble(controlPanel.getStartHeadingField().getText());
-                } catch (NumberFormatException e) {
-                    instructionLabel.setText("Invalid Start Position! Using 0,0,0 for export.");
-                    startX = 0.0;
-                    startY = 0.0;
-                    startHeading = 0.0; // Fallback to a safe default
-                }
+        // To make the dialog resizable with the text area, we put the text area in a layout pane.
+        // This is a common JavaFX trick to make dialog content expandable.
+        VBox content = new VBox(textArea);
+        VBox.setVgrow(textArea, Priority.ALWAYS);
+        alert.getDialogPane().setContent(content);
 
+        // Set the minimum size of the dialog pane itself
+        alert.getDialogPane().setPrefSize(650, 480);
 
-                // --- START OF MODIFICATIONS ---
-
-                // --- 1. Write the scheduler initialization code ---
-                writer.println("        // It's recommended to initialize the scheduler once in your OpMode's init() method.");
-                writer.println("        // private CommandScheduler scheduler;");
-                writer.println("        // public void init() {");
-                writer.println("        //     ...");
-                writer.println("        //     scheduler = new CommandScheduler(drivetrain, intake, shooter, turret);");
-                writer.println("        // }");
-                writer.println();
-
-
-                // --- 2. Write the initial pose setting code ---
-                writer.println("        // Set the robot's starting position on the field");
-                writer.printf(Locale.US, "        Pose2D initialPose = new Pose2D(DistanceUnit.INCH, %.2f, %.2f, AngleUnit.DEGREES, %.2f);\n", startX, startY, startHeading);
-                writer.println("        drivetrain.setPosition(initialPose);");
-                writer.println();
-
-
-                // --- 3. Write the path generation code (unchanged) ---
-                writer.println("        // Path generated by FTC Field Simulator");
-                writer.println("        boolean debug = true;");
-                writer.println("        ArrayList<CurvePoint> path = new ArrayList<>();");
-
-                for (CurvePoint point : currentPath) {
-                    writer.printf(Locale.US,
-                            "        path.add(new CurvePoint(%.2f, %.2f, %.2f, %.2f, %.2f, Math.toRadians(%.1f), %.2f));\n",
-                            point.x,
-                            point.y,
-                            point.moveSpeed,
-                            point.turnSpeed,
-                            point.followDistance,
-                            Math.toDegrees(point.slowDownTurnRadians),
-                            point.slowDownTurnAmount
-                    );
-                }
-                writer.println();
-
-
-                // --- 4. Write the new scheduler add command ---
-                writer.printf(Locale.US, "        scheduler.add(new FollowPathCommand(path, Math.toRadians(%.1f), debug));\n", followAngleDeg);
-
-                // --- END OF MODIFICATIONS ---
-
-                instructionLabel.setText("Path exported as code to " + file.getName());
-            } catch (Exception e) {
-                instructionLabel.setText("Error exporting code: " + e.getMessage());
-                e.printStackTrace();
-            }
-        } else {
-            instructionLabel.setText("Code export cancelled.");
-        }
+        alert.showAndWait();
     }
+
+//    /**
+//     * Handles the logic for exporting the current path to a Java code snippet file.
+//     * @param ownerStage The main stage, used as the owner for the file chooser dialog.
+//     */
+//    private void exportPathToCode(Stage ownerStage) {
+//        if (currentPath == null || currentPath.isEmpty()) {
+//            instructionLabel.setText("No path to export.");
+//            return;
+//        }
+//
+//        FileChooser fileChooser = new FileChooser();
+//        fileChooser.setTitle("Export Path to Java Code");
+//        fileChooser.setInitialFileName("MyAutonomousPath.java"); // Suggest a .java file name
+//        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Java Files (*.java)", "*.java"));
+//        File file = fileChooser.showSaveDialog(ownerStage);
+//
+//        if (file != null) {
+//            try (PrintWriter writer = new PrintWriter(file)) {
+//                // --- Get configuration values from the UI ---
+//                double followAngleDeg;
+//                try {
+//                    followAngleDeg = Double.parseDouble(controlPanel.getFollowAngleField().getText());
+//                } catch (NumberFormatException e) {
+//                    instructionLabel.setText("Invalid Follow Angle! Using 90 deg for export.");
+//                    followAngleDeg = 90.0; // Fallback to a safe default
+//                }
+//
+//                double startX, startY, startHeading;
+//                try {
+//                    startX = Double.parseDouble(controlPanel.getStartXField().getText());
+//                    startY = Double.parseDouble(controlPanel.getStartYField().getText());
+//                    startHeading = Double.parseDouble(controlPanel.getStartHeadingField().getText());
+//                } catch (NumberFormatException e) {
+//                    instructionLabel.setText("Invalid Start Position! Using 0,0,0 for export.");
+//                    startX = 0.0;
+//                    startY = 0.0;
+//                    startHeading = 0.0; // Fallback to a safe default
+//                }
+//
+//
+//                // --- START OF MODIFICATIONS ---
+//
+//                // --- 1. Write the scheduler initialization code ---
+//                writer.println("        // It's recommended to initialize the scheduler once in your OpMode's init() method.");
+//                writer.println("        // private CommandScheduler scheduler;");
+//                writer.println("        // public void init() {");
+//                writer.println("        //     ...");
+//                writer.println("        //     scheduler = new CommandScheduler(drivetrain, intake, shooter, turret);");
+//                writer.println("        // }");
+//                writer.println();
+//
+//
+//                // --- 2. Write the initial pose setting code ---
+//                writer.println("        // Set the robot's starting position on the field");
+//                writer.printf(Locale.US, "        Pose2D initialPose = new Pose2D(DistanceUnit.INCH, %.2f, %.2f, AngleUnit.DEGREES, %.2f);\n", startX, startY, startHeading);
+//                writer.println("        drivetrain.setPosition(initialPose);");
+//                writer.println();
+//
+//
+//                // --- 3. Write the path generation code (unchanged) ---
+//                writer.println("        // Path generated by FTC Field Simulator");
+//                writer.println("        boolean debug = true;");
+//                writer.println("        ArrayList<CurvePoint> path = new ArrayList<>();");
+//
+//                for (CurvePoint point : currentPath) {
+//                    writer.printf(Locale.US,
+//                            "        path.add(new CurvePoint(%.2f, %.2f, %.2f, %.2f, %.2f, Math.toRadians(%.1f), %.2f));\n",
+//                            point.x,
+//                            point.y,
+//                            point.moveSpeed,
+//                            point.turnSpeed,
+//                            point.followDistance,
+//                            Math.toDegrees(point.slowDownTurnRadians),
+//                            point.slowDownTurnAmount
+//                    );
+//                }
+//                writer.println();
+//
+//
+//                // --- 4. Write the new scheduler add command ---
+//                writer.printf(Locale.US, "        scheduler.add(new FollowPathCommand(path, Math.toRadians(%.1f), debug));\n", followAngleDeg);
+//
+//                // --- END OF MODIFICATIONS ---
+//
+//                instructionLabel.setText("Path exported as code to " + file.getName());
+//            } catch (Exception e) {
+//                instructionLabel.setText("Error exporting code: " + e.getMessage());
+//                e.printStackTrace();
+//            }
+//        } else {
+//            instructionLabel.setText("Code export cancelled.");
+//        }
+//    }
 
     private void deleteCurrentPath() {
         currentPath.clear();

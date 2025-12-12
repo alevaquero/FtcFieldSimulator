@@ -30,7 +30,8 @@ public class ControlPanel extends VBox {
     public static final String TEXTFIELD_VARIES_TEXT = "-- Varies --";
 
     // --- UI Elements ---
-    private Button newPathButton, deletePathButton, exportPathButton, exportCodeButton, clearTrailButton, clearNamedLinesButton;
+    private Button newPathButton, deletePathButton, importCodeButton, exportCodeButton, clearTrailButton, clearNamedLinesButton;
+    private ComboBox<String> ipAddressComboBox;
     private Button sendPathButton;
     private Button recordButton, playPauseButton, reverseButton, forwardButton;
     private Button openButton, saveButton;
@@ -78,15 +79,27 @@ public class ControlPanel extends VBox {
         pathTitle.setFont(titleFont);
         newPathButton = createMaxWidthButton("New Path");
         deletePathButton = createMaxWidthButton("Delete Path");
-        exportPathButton = createMaxWidthButton("Export CSV");
+        importCodeButton = createMaxWidthButton("Import Code");
         exportCodeButton = createMaxWidthButton("Export Code");
+        ipAddressComboBox = new ComboBox<>();
+        ipAddressComboBox.getItems().addAll("192.168.43.1", "192.168.56.2");
+        ipAddressComboBox.setValue("192.168.43.1"); // Set default value
+        ipAddressComboBox.setTooltip(new Tooltip("Select the Robot IP Address"));
+        ipAddressComboBox.setStyle("-fx-font-size: 12px;");
         sendPathButton = createMaxWidthButton("Send Path to Robot");
-        // Create an HBox for the export buttons
-        HBox exportBox = new HBox(5, exportPathButton, exportCodeButton);
-        HBox.setHgrow(exportPathButton, Priority.ALWAYS);
+        sendPathButton.setStyle("-fx-font-size: 12px;");
+
+        // Create an HBox to hold the IP selector and the send button
+        HBox sendPathBox = new HBox(10, ipAddressComboBox, sendPathButton);
+        sendPathBox.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(sendPathButton, Priority.ALWAYS); // Make the button fill remaining space
+
+        // Create an HBox for the import/export buttons
+        HBox importExportBox = new HBox(5, importCodeButton, exportCodeButton);
+        HBox.setHgrow(importCodeButton, Priority.ALWAYS);
         HBox.setHgrow(exportCodeButton, Priority.ALWAYS);
 
-        VBox pathControlsBox = new VBox(sectionSpacing, pathTitle, newPathButton, deletePathButton, exportBox, sendPathButton);
+        VBox pathControlsBox = new VBox(sectionSpacing, pathTitle, newPathButton, deletePathButton, importExportBox, sendPathBox);
 
 
         // --- Robot Start Position Section ---
@@ -317,8 +330,7 @@ public class ControlPanel extends VBox {
 
     public void setOnNewPathAction(EventHandler<ActionEvent> handler) { newPathButton.setOnAction(handler); }
     public void setOnDeletePathAction(EventHandler<ActionEvent> handler) { deletePathButton.setOnAction(handler); }
-    public void setOnExportPathAction(EventHandler<ActionEvent> handler) { exportPathButton.setOnAction(handler); }
-    public void setOnExportCodeAction(EventHandler<ActionEvent> handler) { exportCodeButton.setOnAction(handler); }
+    public void setOnImportCodeAction(EventHandler<ActionEvent> handler) { importCodeButton.setOnAction(handler); }    public void setOnExportCodeAction(EventHandler<ActionEvent> handler) { exportCodeButton.setOnAction(handler); }
     public void setOnSendPathAction(EventHandler<ActionEvent> handler) { if (sendPathButton != null) { sendPathButton.setOnAction(handler); } }
     public void setOnClearTrailAction(EventHandler<ActionEvent> handler) { clearTrailButton.setOnAction(handler); }
     public void setOnClearNamedLinesAction(EventHandler<ActionEvent> handler) { clearNamedLinesButton.setOnAction(handler); }
@@ -333,23 +345,30 @@ public class ControlPanel extends VBox {
 
     public void setOnShowPlotAction(EventHandler<ActionEvent> handler) { if (showPlotButton != null) { showPlotButton.setOnAction(handler); } }
 
+    // --- Getter for the IP address ComboBox ---
+    public String getSelectedIpAddress() {
+        return ipAddressComboBox.getValue();
+    }
+
     public void setPathEditingActive(boolean isActive) {
         newPathButton.setDisable(isActive);
         deletePathButton.setDisable(isActive || deletePathButton.isDisabled());
-        exportPathButton.setDisable(isActive || exportPathButton.isDisabled());
+        importCodeButton.setDisable(isActive); // Disable during path creation
         exportCodeButton.setDisable(isActive || exportCodeButton.isDisabled());
         if (sendPathButton != null) {
             sendPathButton.setDisable(isActive || sendPathButton.isDisabled());
+            ipAddressComboBox.setDisable(isActive || ipAddressComboBox.isDisabled()); // Also disable the IP box
         }
     }
 
     public void enablePathControls(boolean pathExists) {
         boolean pathEditingMode = newPathButton.isDisabled();
         deletePathButton.setDisable(!pathExists || pathEditingMode);
-        exportPathButton.setDisable(!pathExists || pathEditingMode);
+        importCodeButton.setDisable(pathEditingMode);
         exportCodeButton.setDisable(!pathExists || pathEditingMode);
         if (sendPathButton != null) {
             sendPathButton.setDisable(!pathExists || pathEditingMode);
+            ipAddressComboBox.setDisable(!pathExists || pathEditingMode); // Also disable the IP box if no path
         }
     }
 
