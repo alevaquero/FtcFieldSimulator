@@ -2,3 +2,5 @@
 
 # Gradle files
 .gradle/
+
+.idea/
