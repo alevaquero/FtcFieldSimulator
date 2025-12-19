@@ -1,7 +1,6 @@
 import socket
 import time
 import random
-import math
 
 # --- Configuration ---
 UDP_IP = "127.0.0.1"  # localhost
@@ -109,53 +108,6 @@ def run_sequence():
     send_message("kv:Sub-task,Idle")
     print("--- Sequence Complete ---")
 
-def run_circle_path():
-    """Sends a sequence of position messages to simulate moving in a circle with randomness."""
-    print("\n--- Running Circle Path Sequence (with randomness) ---")
-
-    # 1. Randomize the radius (20% off the base 40 inches)
-    base_radius = 40.0
-    radius = base_radius * random.uniform(0.8, 1.2)
-    print(f"Using randomized radius: {radius:.2f} inches")
-
-    # 2. Define path noise level
-    path_noise_inches = 3.0  # The path can be off by up to this many inches
-
-    duration = 15.0  # seconds
-    frequency = 15.0  # Hz
-    num_steps = int(duration * frequency)
-    wait_interval = 1.0 / frequency
-
-    for i in range(num_steps):
-        angle_rad = (2 * math.pi / num_steps) * i
-
-        # Base circle point
-        base_x = radius * math.cos(angle_rad)
-        base_y = radius * math.sin(angle_rad)
-
-        # Add random offset to the path
-        x_offset = random.uniform(-path_noise_inches, path_noise_inches)
-        y_offset = random.uniform(-path_noise_inches, path_noise_inches)
-
-        x = round(base_x + x_offset, 2)
-        y = round(base_y + y_offset, 2)
-
-
-        # Heading is tangential to the circle, pointing forward along the path
-        heading_rad = angle_rad + math.pi / 2
-        heading_deg = (heading_rad * 180 / math.pi) % 360
-        heading = round(heading_deg, 1)
-
-        message = f"pos:{x},{y},{heading}"
-        send_message(message)
-        time.sleep(wait_interval)
-
-    # Send a final message to a point near the start of the randomized circle
-    final_x = round(radius + random.uniform(-path_noise_inches, path_noise_inches), 2)
-    send_message(f"pos:{final_x},0.0,90.0")
-    print("--- Circle Path Sequence Complete ---")
-
-
 if __name__ == "__main__":
     print("UDP Test Sender for FtcFieldSimulator")
     print("Commands:")
@@ -165,7 +117,6 @@ if __name__ == "__main__":
     print("  t                      - Send a random 'txt' message")
     print("  k                      - Send a random 'kv' (key-value) message")
     print("  s                      - Run a predefined sequence of commands")
-    print("  cp                     - Run a circular path of 80-inch radius in 15s")
     print("  pos:x,y,h              - Send specific position (e.g., pos:10.5,20.0,45)")
     print("  cir:rad,head           - Send specific circle (e.g., cir:15.5,45.0)")
     print("  line:name,x0,y0,x1,y1,style - Send specific named line (e.g., line:myline,0,0,30,30,1)")
@@ -194,8 +145,6 @@ if __name__ == "__main__":
                 test_kv()
             elif command_lower == 's':
                 run_sequence()
-            elif command_lower == 'cp':
-                run_circle_path()
             elif command_lower.startswith(("pos:", "cir:", "line:", "txt:", "kv:")): # Simplified check
 
                 valid_format = True

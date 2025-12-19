@@ -34,7 +34,6 @@ public class ControlPanel extends VBox {
     private ComboBox<String> ipAddressComboBox;
     private Button sendPathButton;
     private Button recordButton, playPauseButton, reverseButton, forwardButton;
-    private Button instantReplayButton, returnToLiveButton; // NEW FOR INSTANT REPLAY
     private Button openButton, saveButton;
     private ImageView recordIcon, stopIcon, playIcon, pauseIcon, reverseIcon, forwardIcon;
     private Slider timelineSlider;
@@ -181,18 +180,6 @@ public class ControlPanel extends VBox {
         forwardButton.setGraphic(forwardIcon);
         HBox recordingButtons = new HBox(10, reverseButton, playPauseButton, forwardButton, recordButton);
         recordingButtons.setAlignment(Pos.CENTER);
-
-        // --- NEW: Instant Replay Section ---
-        instantReplayButton = createMaxWidthButton("Instant Replay");
-        returnToLiveButton = createMaxWidthButton("Return to Live");
-        returnToLiveButton.setStyle("-fx-font-weight: bold; -fx-background-color: #C8E6C9;"); // A green color
-        HBox replayControlsBox = new HBox(instantReplayButton);
-        HBox.setHgrow(instantReplayButton, Priority.ALWAYS);
-        replayControlsBox.getChildren().add(returnToLiveButton);
-        returnToLiveButton.setVisible(false);
-        returnToLiveButton.setManaged(false);
-        // --- END NEW ---
-
         timelineSlider = new Slider(0, 100, 0);
         timeLapsedLabel = new Label("Time: 0.000");
         timeLapsedLabel.setFont(Font.font("Consolas", 12));
@@ -200,7 +187,7 @@ public class ControlPanel extends VBox {
         timeLapsedLabel.setAlignment(Pos.CENTER_RIGHT);
         timeLapsedLabel.setPadding(new Insets(2, 0, 0, 0));
 
-        VBox recordingControlsBox = new VBox(sectionSpacing, recordingTitle, fileButtons, recordingButtons, replayControlsBox, timelineSlider, timeLapsedLabel);
+        VBox recordingControlsBox = new VBox(sectionSpacing, recordingTitle, fileButtons, recordingButtons, timelineSlider, timeLapsedLabel);
 
         // --- Tools Section ---
         showPlotButton = createMaxWidthButton("Show Time Plot");
@@ -343,43 +330,62 @@ public class ControlPanel extends VBox {
 
     public void setOnNewPathAction(EventHandler<ActionEvent> handler) { newPathButton.setOnAction(handler); }
     public void setOnDeletePathAction(EventHandler<ActionEvent> handler) { deletePathButton.setOnAction(handler); }
-    public void setOnImportCodeAction(EventHandler<ActionEvent> handler) { importCodeButton.setOnAction(handler); }
-    public void setOnExportCodeAction(EventHandler<ActionEvent> handler) { exportCodeButton.setOnAction(handler); }
-    public void setOnSendPathAction(EventHandler<ActionEvent> handler) { sendPathButton.setOnAction(handler); }
-    public void enablePathControls(boolean isEnabled) {
-        newPathButton.setDisable(!isEnabled);
-        deletePathButton.setDisable(!isEnabled);
-        importCodeButton.setDisable(!isEnabled);
-        exportCodeButton.setDisable(!isEnabled);
-        sendPathButton.setDisable(!isEnabled);
-        ipAddressComboBox.setDisable(!isEnabled);
-    }
-    public String getIpAddress() { return ipAddressComboBox.getValue(); }
+    public void setOnImportCodeAction(EventHandler<ActionEvent> handler) { importCodeButton.setOnAction(handler); }    public void setOnExportCodeAction(EventHandler<ActionEvent> handler) { exportCodeButton.setOnAction(handler); }
+    public void setOnSendPathAction(EventHandler<ActionEvent> handler) { if (sendPathButton != null) { sendPathButton.setOnAction(handler); } }
+    public void setOnClearTrailAction(EventHandler<ActionEvent> handler) { clearTrailButton.setOnAction(handler); }
+    public void setOnClearNamedLinesAction(EventHandler<ActionEvent> handler) { clearNamedLinesButton.setOnAction(handler); }
 
-    public void setOnRecordAction(EventHandler<ActionEvent> handler) { recordButton.setOnAction(handler); }
-    public void setOnPlayPauseAction(EventHandler<ActionEvent> handler) { playPauseButton.setOnAction(handler); }
-    public void setOnReverseAction(EventHandler<ActionEvent> handler) { reverseButton.setOnAction(handler); }
-    public void setOnForwardAction(EventHandler<ActionEvent> handler) { forwardButton.setOnAction(handler); }
-    public void setOnClearNamedLinesAction(EventHandler<ActionEvent> handler) {
-        clearNamedLinesButton.setOnAction(handler);
-    }
+    public void setOnRecordAction(Runnable action) { recordButton.setOnAction(e -> action.run()); }
+    public void setOnPlayPauseAction(Runnable action) { playPauseButton.setOnAction(e -> action.run()); }
+    public void setOnForwardAction(Runnable action) { if (forwardButton != null) { forwardButton.setOnAction(e -> action.run()); } }
+    public void setOnReverseAction(Runnable action) { if (reverseButton != null) { reverseButton.setOnAction(e -> action.run()); } }
 
-    public void setOnInstantReplayAction(EventHandler<ActionEvent> handler) { instantReplayButton.setOnAction(handler); }
-    public void setOnReturnToLiveAction(EventHandler<ActionEvent> handler) { returnToLiveButton.setOnAction(handler); }
+    public void setOnTimelineSliderChanged(ChangeListener<Number> listener) { timelineSlider.valueProperty().addListener(listener); }
+    public void setOnSliderMouseReleased(EventHandler<MouseEvent> handler) { timelineSlider.setOnMouseReleased(handler); }
 
-    public void setReplayMode(boolean isInReplayMode) {
-        instantReplayButton.setVisible(!isInReplayMode);
-        instantReplayButton.setManaged(!isInReplayMode);
-        returnToLiveButton.setVisible(isInReplayMode);
-        returnToLiveButton.setManaged(isInReplayMode);
+    public void setOnShowPlotAction(EventHandler<ActionEvent> handler) { if (showPlotButton != null) { showPlotButton.setOnAction(handler); } }
 
-        // Disable record button while in replay mode to prevent conflicts
-        recordButton.setDisable(isInReplayMode);
+    // --- Getter for the IP address ComboBox ---
+    public String getSelectedIpAddress() {
+        return ipAddressComboBox.getValue();
     }
 
+    public void setPathEditingActive(boolean isActive) {
+        newPathButton.setDisable(isActive);
+        deletePathButton.setDisable(isActive || deletePathButton.isDisabled());
+        importCodeButton.setDisable(isActive); // Disable during path creation
+        exportCodeButton.setDisable(isActive || exportCodeButton.isDisabled());
+        if (sendPathButton != null) {
+            sendPathButton.setDisable(isActive || sendPathButton.isDisabled());
+            ipAddressComboBox.setDisable(isActive || ipAddressComboBox.isDisabled()); // Also disable the IP box
+        }
+    }
 
-    public void setRecording(boolean isRecording) { recordButton.setGraphic(isRecording ? stopIcon : recordIcon); }
-    public void setPlaying(boolean isPlaying) { playPauseButton.setGraphic(isPlaying ? pauseIcon : playIcon); }
+    public void enablePathControls(boolean pathExists) {
+        boolean pathEditingMode = newPathButton.isDisabled();
+        deletePathButton.setDisable(!pathExists || pathEditingMode);
+        importCodeButton.setDisable(pathEditingMode);
+        exportCodeButton.setDisable(!pathExists || pathEditingMode);
+        if (sendPathButton != null) {
+            sendPathButton.setDisable(!pathExists || pathEditingMode);
+            ipAddressComboBox.setDisable(!pathExists || pathEditingMode); // Also disable the IP box if no path
+        }
+    }
+
+    public void updateTimelineSlider(int currentEventIndex, int totalEvents) {
+        if (totalEvents > 1) {
+            timelineSlider.setMax(totalEvents - 1);
+            timelineSlider.setValue(currentEventIndex);
+        } else {
+            timelineSlider.setMax(100);
+            timelineSlider.setValue(0);
+        }
+    }
+
+    public void setTimelineSliderDisabled(boolean isDisabled) { timelineSlider.setDisable(isDisabled); }
+    public void toggleRecordButtonIcon(boolean isRecording) { recordButton.setGraphic(isRecording ? stopIcon : recordIcon); }
+    public void togglePlayPauseButtonIcon(boolean isPlaying) { playPauseButton.setGraphic(isPlaying ? pauseIcon : playIcon); }
+
     public void setPlaybackControlsDisabled(boolean isDisabled) {
         playPauseButton.setDisable(isDisabled);
         reverseButton.setDisable(isDisabled);
@@ -387,38 +393,56 @@ public class ControlPanel extends VBox {
         timelineSlider.setDisable(isDisabled);
     }
 
-    public Slider getTimelineSlider() { return timelineSlider; }
-    public ComboBox<Object> getPointSelectionComboBox() { return pointSelectionComboBox; }
+    public Slider getTimelineSlider() { return this.timelineSlider; }
 
-    public void updatePointSelectionComboBox(List<CurvePoint> points, Object selection) {
-        pointSelectionComboBox.getItems().clear();
-        if (points != null && !points.isEmpty()) {
-            pointSelectionComboBox.getItems().add(ALL_POINTS_MARKER);
-            pointSelectionComboBox.getItems().addAll(points);
-        }
-
-        if (selection != null && pointSelectionComboBox.getItems().contains(selection)) {
-            pointSelectionComboBox.setValue(selection);
-        } else if (points != null && !points.isEmpty()) {
-            pointSelectionComboBox.setValue(ALL_POINTS_MARKER);
-        } else {
-            pointSelectionComboBox.setValue(null);
+    public void setPointEditingControlsDisabled(boolean disabled) {
+        pointSelectionComboBox.setDisable(disabled);
+        for (TextField tf : paramTextFieldsList) {
+            tf.setDisable(disabled);
         }
     }
 
+    public void updatePointSelectionComboBox(List<CurvePoint> path, Object objectToSelect) {
+        List<Object> newItemsForComboBox = new ArrayList<>();
+        newItemsForComboBox.add(ALL_POINTS_MARKER);
 
-    public List<TextField> getParamTextFields() { return paramTextFieldsList; }
-
-    public void setOnClearTrailAction(EventHandler<ActionEvent> handler) { clearTrailButton.setOnAction(handler); }
-    public void setOnClearCustomLinesAction(EventHandler<ActionEvent> handler) { clearNamedLinesButton.setOnAction(handler); }
-    public void setOnShowPlotAction(EventHandler<ActionEvent> handler) { showPlotButton.setOnAction(handler); }
-
-    public void setPointEditingControlsDisabled(boolean isDisabled) {
-        pointSelectionComboBox.setDisable(isDisabled);
-        followAngleField.setDisable(isDisabled);
-        for (TextField tf : paramTextFieldsList) {
-            tf.setDisable(isDisabled);
+        if (path != null && !path.isEmpty()) {
+            newItemsForComboBox.addAll(path);
         }
+
+        pointSelectionComboBox.setItems(FXCollections.observableArrayList(newItemsForComboBox));
+
+        if (objectToSelect != null && newItemsForComboBox.contains(objectToSelect)) {
+            pointSelectionComboBox.setValue(objectToSelect);
+        } else if (path != null && !path.isEmpty()) {
+            pointSelectionComboBox.setValue(ALL_POINTS_MARKER);
+        } else {
+            if (!pointSelectionComboBox.isDisabled()) {
+                pointSelectionComboBox.setValue(ALL_POINTS_MARKER);
+            } else {
+                pointSelectionComboBox.setValue(null);
+            }
+        }
+    }
+
+    public void setOnPointSelectionAction(ChangeListener<Object> listener) {
+        pointSelectionComboBox.valueProperty().addListener(listener);
+    }
+
+    public Object getSelectedPointFromComboBox() {
+        return pointSelectionComboBox.getValue();
+    }
+
+    public void loadParametersForPoint(CurvePoint point) {
+        if (point == null) {
+            clearParameterFields();
+            return;
+        }
+        moveSpeedField.setText(String.format(Locale.US, "%.2f", point.moveSpeed));
+        turnSpeedField.setText(String.format(Locale.US, "%.2f", point.turnSpeed));
+        followDistanceField.setText(String.format(Locale.US, "%.2f", point.followDistance));
+        slowDownTurnDegreesField.setText(String.format(Locale.US, "%.1f", Math.toDegrees(point.slowDownTurnRadians)));
+        slowDownTurnAmountField.setText(String.format(Locale.US, "%.2f", point.slowDownTurnAmount));
     }
 
     public void loadGlobalDefaultsIntoParameterFields() {
@@ -427,24 +451,31 @@ public class ControlPanel extends VBox {
         followDistanceField.setText(DEFAULT_FOLLOW_DISTANCE);
         slowDownTurnDegreesField.setText(DEFAULT_SLOW_DOWN_TURN_DEGREES);
         slowDownTurnAmountField.setText(DEFAULT_SLOW_DOWN_TURN_AMOUNT);
-        // No need to set followAngleField here, it's set at construction
     }
 
-
-    public void setParameterFieldsToVaries() {
-        followAngleField.setText(TEXTFIELD_VARIES_TEXT);
+    public void showVariesInParameterFields() {
         for (TextField tf : paramTextFieldsList) {
             tf.setText(TEXTFIELD_VARIES_TEXT);
         }
     }
 
-    public void setParameterFieldsFromPoint(CurvePoint point) {
-        // TODO: followAngle is not yet implemented in the backend CurvePoint class.
-        // followAngleField.setText(String.format(Locale.US, "%.1f", point.followAngle));
-        moveSpeedField.setText(String.format(Locale.US, "%.2f", point.moveSpeed));
-        turnSpeedField.setText(String.format(Locale.US, "%.2f", point.turnSpeed));
-        followDistanceField.setText(String.format(Locale.US, "%.1f", point.followDistance));
-        slowDownTurnDegreesField.setText(String.format(Locale.US, "%.1f", Math.toDegrees(point.slowDownTurnRadians)));
-        slowDownTurnAmountField.setText(String.format(Locale.US, "%.2f", point.slowDownTurnAmount));
+    public void clearParameterFields() {
+        for (TextField tf : paramTextFieldsList) {
+            tf.setText("");
+        }
     }
+
+    public TextField getMoveSpeedField() { return moveSpeedField; }
+    public TextField getTurnSpeedField() { return turnSpeedField; }
+    public TextField getFollowDistanceField() { return followDistanceField; }
+    public TextField getSlowDownTurnDegreesField() { return slowDownTurnDegreesField; }
+    public TextField getSlowDownTurnAmountField() { return slowDownTurnAmountField; }
+    public List<TextField> getAllParamTextFields() { return paramTextFieldsList; }
+
+    public double getMoveSpeedParam() throws NumberFormatException { return Double.parseDouble(moveSpeedField.getText()); }
+    public double getTurnSpeedParam() throws NumberFormatException { return Double.parseDouble(turnSpeedField.getText()); }
+    public double getFollowDistanceParam() throws NumberFormatException { return Double.parseDouble(followDistanceField.getText()); }
+    public double getSlowDownTurnDegreesParam() throws NumberFormatException { return Double.parseDouble(slowDownTurnDegreesField.getText()); }
+    public double getSlowDownTurnAmountParam() throws NumberFormatException { return Double.parseDouble(slowDownTurnAmountField.getText()); }
 }
+
