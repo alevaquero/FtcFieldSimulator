@@ -1,6 +1,7 @@
 package com.example.ftcfieldsimulator;
 
 import com.example.ftcfieldsimulator.UdpPositionListener;
+import com.example.ftcfieldsimulator.UdpPositionListener.UdpMessageData; // Corrected import
 
 import java.util.ArrayList;
 import java.util.function.Consumer;
@@ -11,9 +12,9 @@ public class RecordingManager {
 
     public static class RecordedEvent {
         public final long timestamp; // This should ALWAYS be an ABSOLUTE timestamp
-        public final com.example.ftcfieldsimulator.UdpPositionListener.UdpMessageData messageData;
+        public final UdpMessageData messageData;
 
-        public RecordedEvent(long timestamp, com.example.ftcfieldsimulator.UdpPositionListener.UdpMessageData messageData) {
+        public RecordedEvent(long timestamp, UdpMessageData messageData) {
             this.timestamp = timestamp;
             this.messageData = messageData;
         }
@@ -26,17 +27,48 @@ public class RecordingManager {
     private volatile int playbackIndex = 0;
     private ArrayList<RecordedEvent> recordedSession = new ArrayList<>();
 
-//    private long recordingStartTime = 0;
+    // --- Live Buffer for Instant Replay ---
+    private final ArrayList<RecordedEvent> liveBuffer = new ArrayList<>();
+    private static final long LIVE_BUFFER_DURATION_MS = 10 * 60 * 1000; // 10 minutes
+
+    //    private long recordingStartTime = 0;
     private Thread playbackThread;
-    private final Consumer<com.example.ftcfieldsimulator.UdpPositionListener.UdpMessageData> eventConsumer;
+    private final Consumer<UdpMessageData> eventConsumer;
     private final Runnable onPlaybackFinished;
     private Consumer<Integer> onProgressUpdateCallback; // For slider updates
     private final Object pauseLock = new Object();
     private final Object stateLock = new Object(); // Lock for critical state changes
 
-    public RecordingManager(Consumer<com.example.ftcfieldsimulator.UdpPositionListener.UdpMessageData> eventConsumer, Runnable onPlaybackFinished) {
+    public RecordingManager(Consumer<UdpMessageData> eventConsumer, Runnable onPlaybackFinished) {
         this.eventConsumer = eventConsumer;
         this.onPlaybackFinished = onPlaybackFinished;
+    }
+
+    /**
+     * Adds an event to the live buffer and prunes old events to maintain the buffer's time duration.
+     * This should be called for every incoming UDP message during live view.
+     * @param messageData The data from the UDP message.
+     */
+    public void addLiveEvent(UdpMessageData messageData) {
+        synchronized (stateLock) {
+            long now = System.currentTimeMillis();
+            liveBuffer.add(new RecordedEvent(now, messageData));
+
+            // Prune the buffer to keep it within the 10-minute window
+            long cutoffTimestamp = now - LIVE_BUFFER_DURATION_MS;
+            liveBuffer.removeIf(event -> event.timestamp < cutoffTimestamp);
+        }
+    }
+
+    /**
+     * Loads the current content of the live buffer into the main recordedSession for playback.
+     * This is the core of the "Instant Replay" feature.
+     */
+    public void loadFromLiveBuffer() {
+        synchronized (stateLock) {
+            // Pass a copy of the live buffer to the existing loadRecording method
+            loadRecording(new ArrayList<>(liveBuffer));
+        }
     }
 
     public void setOnProgressUpdate(Consumer<Integer> callback) {
@@ -116,6 +148,7 @@ public class RecordingManager {
                 currentState = PlaybackState.IDLE; // Ensure it's IDLE
 //                return;
             }
+            liveBuffer.clear();
             currentState = PlaybackState.RECORDING;
             recordedSession.clear();
             playbackIndex = 0;
@@ -128,7 +161,7 @@ public class RecordingManager {
         }
     }
 
-    public void addEvent(com.example.ftcfieldsimulator.UdpPositionListener.UdpMessageData messageData) {
+    public void addEvent(UdpMessageData messageData) {
         synchronized (stateLock) {
             if (currentState != PlaybackState.RECORDING) return;
 
@@ -586,67 +619,6 @@ public class RecordingManager {
             });
         }
     }
-
-
-//    // +++ NEW METHODS for stepping +++
-//    /**
-//     * Steps forward to the next RecordedEvent that contains PositionData.
-//     * Updates playbackIndex and dispatches the event.
-//     */
-//    public void stepForward() {
-//        synchronized (stateLock) {
-//            if (recordedSession.isEmpty()) return;
-//
-//            if (currentState == PlaybackState.PLAYING || currentState == PlaybackState.PAUSED) {
-//                stopPlaybackInternal(); // Sets state to IDLE
-//            }
-//            // Ensure state is IDLE for stepping logic
-//            currentState = PlaybackState.IDLE;
-//
-//            int searchIndex = playbackIndex + 1;
-//            while (searchIndex < recordedSession.size()) {
-//                if (recordedSession.get(searchIndex).messageData instanceof com.example.ftcfieldsimulator.UdpPositionListener.PositionData) {
-//                    playbackIndex = searchIndex;
-//                    dispatchCurrentEvent();
-//                    System.out.println("Stepped forward to PositionData at index: " + playbackIndex);
-//                    return;
-//                }
-//                searchIndex++;
-//            }
-//            System.out.println("Step forward: No further PositionData found. Remained at index: " + playbackIndex);
-//            // Optional: if no PositionData found, dispatch current index again to ensure UI consistency if needed
-//            // dispatchCurrentEvent();
-//        }
-//    }
-//
-//    /**
-//     * Steps backward to the previous RecordedEvent that contains PositionData.
-//     * Updates playbackIndex and dispatches the event.
-//     */
-//    public void stepBackward() {
-//        synchronized (stateLock) {
-//            if (recordedSession.isEmpty()) return;
-//
-//            if (currentState == PlaybackState.PLAYING || currentState == PlaybackState.PAUSED) {
-//                stopPlaybackInternal(); // Sets state to IDLE
-//            }
-//            currentState = PlaybackState.IDLE;
-//
-//            int searchIndex = playbackIndex - 1;
-//            while (searchIndex >= 0) {
-//                if (recordedSession.get(searchIndex).messageData instanceof UdpPositionListener.PositionData) {
-//                    playbackIndex = searchIndex;
-//                    dispatchCurrentEvent();
-//                    System.out.println("Stepped backward to PositionData at index: " + playbackIndex);
-//                    return;
-//                }
-//                searchIndex--;
-//            }
-//            System.out.println("Step backward: No previous PositionData found. Remained at index: " + playbackIndex);
-//            // Optional: if no PositionData found, dispatch current index again
-//            // dispatchCurrentEvent();
-//        }
-//    }
 
     // +++ MODIFIED to use dispatchCurrentEvent +++
     private void runPlaybackLoop() {

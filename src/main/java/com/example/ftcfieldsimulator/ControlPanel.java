@@ -34,6 +34,7 @@ public class ControlPanel extends VBox {
     private ComboBox<String> ipAddressComboBox;
     private Button sendPathButton;
     private Button recordButton, playPauseButton, reverseButton, forwardButton;
+    private Button instantReplayButton, returnToLiveButton;
     private Button openButton, saveButton;
     private ImageView recordIcon, stopIcon, playIcon, pauseIcon, reverseIcon, forwardIcon;
     private Slider timelineSlider;
@@ -180,6 +181,18 @@ public class ControlPanel extends VBox {
         forwardButton.setGraphic(forwardIcon);
         HBox recordingButtons = new HBox(10, reverseButton, playPauseButton, forwardButton, recordButton);
         recordingButtons.setAlignment(Pos.CENTER);
+
+        // --- Instant Replay Section ---
+        instantReplayButton = createMaxWidthButton("Instant Replay");
+        returnToLiveButton = createMaxWidthButton("Return to Live");
+//        returnToLiveButton.setStyle("-fx-font-weight: bold; -fx-background-color: #C8E6C9;"); // A green color
+        HBox replayControlsBox = new HBox(instantReplayButton);
+        HBox.setHgrow(instantReplayButton, Priority.ALWAYS);
+        HBox.setHgrow(returnToLiveButton, Priority.ALWAYS);
+        replayControlsBox.getChildren().add(returnToLiveButton);
+        returnToLiveButton.setVisible(false);
+        returnToLiveButton.setManaged(false);
+
         timelineSlider = new Slider(0, 100, 0);
         timeLapsedLabel = new Label("Time: 0.000");
         timeLapsedLabel.setFont(Font.font("Consolas", 12));
@@ -187,7 +200,7 @@ public class ControlPanel extends VBox {
         timeLapsedLabel.setAlignment(Pos.CENTER_RIGHT);
         timeLapsedLabel.setPadding(new Insets(2, 0, 0, 0));
 
-        VBox recordingControlsBox = new VBox(sectionSpacing, recordingTitle, fileButtons, recordingButtons, timelineSlider, timeLapsedLabel);
+        VBox recordingControlsBox = new VBox(sectionSpacing, recordingTitle, fileButtons, recordingButtons, replayControlsBox, timelineSlider, timeLapsedLabel);
 
         // --- Tools Section ---
         showPlotButton = createMaxWidthButton("Show Time Plot");
@@ -350,6 +363,9 @@ public class ControlPanel extends VBox {
         return ipAddressComboBox.getValue();
     }
 
+    public void setOnInstantReplayAction(EventHandler<ActionEvent> handler) { instantReplayButton.setOnAction(handler); }
+    public void setOnReturnToLiveAction(EventHandler<ActionEvent> handler) { returnToLiveButton.setOnAction(handler); }
+
     public void setPathEditingActive(boolean isActive) {
         newPathButton.setDisable(isActive);
         deletePathButton.setDisable(isActive || deletePathButton.isDisabled());
@@ -359,6 +375,20 @@ public class ControlPanel extends VBox {
             sendPathButton.setDisable(isActive || sendPathButton.isDisabled());
             ipAddressComboBox.setDisable(isActive || ipAddressComboBox.isDisabled()); // Also disable the IP box
         }
+    }
+
+    public void setReplayMode(boolean isInReplayMode) {
+        instantReplayButton.setVisible(!isInReplayMode);
+        instantReplayButton.setManaged(!isInReplayMode);
+        returnToLiveButton.setVisible(isInReplayMode);
+        returnToLiveButton.setManaged(isInReplayMode);
+        // Disable record button while in replay mode to prevent conflicts
+        recordButton.setDisable(isInReplayMode);
+
+        // Enable playback controls and save button ONLY when in replay mode.
+        // Disable them when returning to live mode.
+        setPlaybackControlsDisabled(!isInReplayMode);
+        setSaveButtonDisabled(!isInReplayMode);
     }
 
     public void enablePathControls(boolean pathExists) {
@@ -385,6 +415,8 @@ public class ControlPanel extends VBox {
     public void setTimelineSliderDisabled(boolean isDisabled) { timelineSlider.setDisable(isDisabled); }
     public void toggleRecordButtonIcon(boolean isRecording) { recordButton.setGraphic(isRecording ? stopIcon : recordIcon); }
     public void togglePlayPauseButtonIcon(boolean isPlaying) { playPauseButton.setGraphic(isPlaying ? pauseIcon : playIcon); }
+    public void setRecording(boolean isRecording) { recordButton.setGraphic(isRecording ? stopIcon : recordIcon); }
+    public void setPlaying(boolean isPlaying) { playPauseButton.setGraphic(isPlaying ? pauseIcon : playIcon); }
 
     public void setPlaybackControlsDisabled(boolean isDisabled) {
         playPauseButton.setDisable(isDisabled);
@@ -394,6 +426,7 @@ public class ControlPanel extends VBox {
     }
 
     public Slider getTimelineSlider() { return this.timelineSlider; }
+    public ComboBox<Object> getPointSelectionComboBox() { return pointSelectionComboBox; }
 
     public void setPointEditingControlsDisabled(boolean disabled) {
         pointSelectionComboBox.setDisable(disabled);

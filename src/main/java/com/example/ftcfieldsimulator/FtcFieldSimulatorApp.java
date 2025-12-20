@@ -118,7 +118,8 @@ public class FtcFieldSimulatorApp extends Application {
         double totalAppHeight = FIELD_DISPLAY_HEIGHT_PIXELS;
 
         // --- Init core components ---
-        this.recordingManager = new RecordingManager(this::handleUdpMessage, this::onPlaybackFinished);
+//        this.recordingManager = new RecordingManager(this::handleUdpMessage, this::onPlaybackFinished);
+        this.recordingManager = new RecordingManager(this::processUdpDataAndUpdateUI, this::onPlaybackFinished);
         recordingManager.setOnProgressUpdate(index -> {
             if (controlPanel != null && controlPanel.getTimelineSlider() != null && !controlPanel.getTimelineSlider().isValueChanging()) {
                 controlPanel.getTimelineSlider().setValue(index);
@@ -1214,6 +1215,37 @@ public class FtcFieldSimulatorApp extends Application {
             // updateTimeLapsedDisplay(); // Should be handled by onProgressUpdate from seekTo
         });
 
+        controlPanel.setOnInstantReplayAction(e -> {
+            recordingManager.loadFromLiveBuffer();
+            controlPanel.setReplayMode(true); // Switch UI to replay mode
+
+            boolean hasRecording = recordingManager.hasRecording();
+
+            // Update UI state based on whether the buffer had events
+            if (hasRecording) {
+                // Set slider max to the number of events and seek to the beginning
+                controlPanel.updateTimelineSlider(0, recordingManager.getTotalEvents());
+                recordingManager.seekTo(0);
+                instructionLabel.setText("Reviewing last 10 minutes. Use timeline to scrub.");
+            } else {
+                controlPanel.updateTimelineSlider(0, 1); // Reset slider
+                instructionLabel.setText("Live buffer is empty. No replay available.");
+            }
+            updateTimeLapsedDisplay();
+        });
+
+        controlPanel.setOnReturnToLiveAction(e -> {
+            recordingManager.stopPlayback(); // Ensure any playback is stopped
+            recordingManager.loadRecording(new ArrayList<>()); // Clear the main session
+            controlPanel.setReplayMode(false); // Switch UI back to live mode
+
+            // Reset UI elements to a clean live state
+            fieldDisplay.clearTrail();
+            clearAllNamedLines();
+            fieldDisplay.drawCurrentState();
+            updateTimeLapsedDisplay();
+            instructionLabel.setText("Returned to live view.");
+        });
 
     }
 
@@ -1293,23 +1325,96 @@ public class FtcFieldSimulatorApp extends Application {
         }
     }
 
+    /**
+     * This method is called directly by the UDP listener thread.
+     * Its only jobs are to add the event to the appropriate buffers and
+     * then, if in a live mode, pass the data to the UI thread for processing.
+     * It should NOT do any UI updates itself.
+     */
     private void handleUdpMessage(UdpMessageData messageData) {
         if (messageData == null) return;
-        Platform.runLater(() -> {
-            if (recordingManager.getCurrentState() == RecordingManager.PlaybackState.RECORDING) recordingManager.addEvent(messageData);
-            if (messageData instanceof PositionData) { PositionData p = (PositionData)messageData; if(robot!=null){ fieldDisplay.addTrailDot(robot.getXInches(),robot.getYInches()); robot.setPosition(p.x,p.y); robot.setHeading(p.heading);}}
-            else if (messageData instanceof CircleData) { CircleData c = (CircleData)messageData; if(fieldDisplay!=null) fieldDisplay.addDebugCircle(robot.getXInches(),robot.getYInches(),c.radiusInches,c.heading,Color.rgb(255,165,0,0.7));}
-            else if (messageData instanceof LineData) { LineData l = (LineData)messageData; synchronized(namedLinesLock){namedLinesToDraw.put(l.name,l);}}
-            else if (messageData instanceof TextData) { TextData t = (TextData)messageData; if(fieldDisplay!=null) fieldDisplay.setRobotTextMessage(t.text);}
-            else if (messageData instanceof KeyValueData) {
-                KeyValueData kv = (KeyValueData) messageData;
-                if (keyValueTable != null) {
-                    keyValueTable.updateValue(kv.key, kv.value);
-                }
-            }
-            if(messageData instanceof PositionData) updateUIFromRobotState(); else fieldDisplay.drawCurrentState();
-        });
+
+        // 1. Always add the event to the live buffer for instant replay functionality.
+        recordingManager.addLiveEvent(messageData);
+
+        // 2. If a formal recording session is active, also add the event to that session.
+        if (recordingManager.getCurrentState() == RecordingManager.PlaybackState.RECORDING) {
+            recordingManager.addEvent(messageData);
+        }
+
+        // 3. If we are in a "live" viewing mode (not playing back or paused),
+        //    then schedule the UI update to run on the main JavaFX thread.
+        RecordingManager.PlaybackState state = recordingManager.getCurrentState();
+        if (state != RecordingManager.PlaybackState.PLAYING && state != RecordingManager.PlaybackState.PAUSED) {
+            Platform.runLater(() -> processUdpDataAndUpdateUI(messageData));
+        }
     }
+
+    /**
+     * This method is ONLY called from the JavaFX Application Thread (via Platform.runLater).
+     * It is responsible for taking message data and updating all relevant UI components,
+     * such as the robot's position, the field trail, and text displays.
+     */
+    private void processUdpDataAndUpdateUI(UdpMessageData messageData) {
+        if (messageData == null) return;
+
+        // Process the data based on its type
+        if (messageData instanceof PositionData) {
+            PositionData p = (PositionData) messageData;
+            if (robot != null) {
+                fieldDisplay.addTrailDot(robot.getXInches(), robot.getYInches());
+                robot.setPosition(p.x, p.y, p.heading);
+            }
+        } else if (messageData instanceof CircleData) {
+            CircleData c = (CircleData) messageData;
+            if (fieldDisplay != null) {
+                fieldDisplay.addDebugCircle(robot.getXInches(), robot.getYInches(), c.radiusInches, c.heading, Color.rgb(255, 165, 0, 0.7));
+            }
+        } else if (messageData instanceof LineData) {
+            LineData l = (LineData) messageData;
+            synchronized (namedLinesLock) {
+                namedLinesToDraw.put(l.name, l);
+            }
+        } else if (messageData instanceof TextData) {
+            TextData t = (TextData) messageData;
+            if (fieldDisplay != null) {
+                fieldDisplay.setRobotTextMessage(t.text);
+            }
+        } else if (messageData instanceof KeyValueData) {
+            KeyValueData kv = (KeyValueData) messageData;
+            if (keyValueTable != null) {
+                keyValueTable.updateValue(kv.key, kv.value);
+            }
+        }
+
+        // After processing, redraw the UI
+        if (messageData instanceof PositionData) {
+            // This also updates status text fields and redraws the field
+            updateUIFromRobotState();
+        } else {
+            // For non-positional data, just redraw the field to show new lines, circles, etc.
+            fieldDisplay.drawCurrentState();
+        }
+    }
+
+
+//    private void handleUdpMessage(UdpMessageData messageData) {
+//        if (messageData == null) return;
+//        Platform.runLater(() -> {
+//            if (recordingManager.getCurrentState() == RecordingManager.PlaybackState.RECORDING) recordingManager.addEvent(messageData);
+//            if (messageData instanceof PositionData) { PositionData p = (PositionData)messageData; if(robot!=null){ fieldDisplay.addTrailDot(robot.getXInches(),robot.getYInches()); robot.setPosition(p.x,p.y); robot.setHeading(p.heading);}}
+//            else if (messageData instanceof CircleData) { CircleData c = (CircleData)messageData; if(fieldDisplay!=null) fieldDisplay.addDebugCircle(robot.getXInches(),robot.getYInches(),c.radiusInches,c.heading,Color.rgb(255,165,0,0.7));}
+//            else if (messageData instanceof LineData) { LineData l = (LineData)messageData; synchronized(namedLinesLock){namedLinesToDraw.put(l.name,l);}}
+//            else if (messageData instanceof TextData) { TextData t = (TextData)messageData; if(fieldDisplay!=null) fieldDisplay.setRobotTextMessage(t.text);}
+//            else if (messageData instanceof KeyValueData) {
+//                KeyValueData kv = (KeyValueData) messageData;
+//                if (keyValueTable != null) {
+//                    keyValueTable.updateValue(kv.key, kv.value);
+//                }
+//            }
+//            if(messageData instanceof PositionData) updateUIFromRobotState(); else fieldDisplay.drawCurrentState();
+//        });
+//    }
 
     private void onPlaybackFinished() {
         Platform.runLater(() -> {
