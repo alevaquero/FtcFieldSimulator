@@ -17,6 +17,8 @@ import javafx.scene.control.Label;
 import javafx.scene.image.Image;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
@@ -28,6 +30,7 @@ public class FieldDisplay extends Pane {
     private final Canvas canvas;
     private final GraphicsContext gc;
     private final Label coordinateLabel;
+    private final Label instructionLabel;
 
     // These remain the logical dimensions of the field itself.
     // fieldWidthInches is the extent along the new HORIZONTAL Field Y-axis.
@@ -116,21 +119,27 @@ public class FieldDisplay extends Pane {
 
     // --- State and callbacks for Draggable Points ---
     private CurvePoint hoveredPoint = null;
+    private int hoveredSegmentIndex = -1;
     private CurvePoint draggedPoint = null;
     private int draggedPointIndex = -1;
     private static final double POINT_GRAB_RADIUS_PIXELS = 10.0;
+    private static final double SEGMENT_GRAB_RADIUS_PIXELS = 8.0;
 
     private BiConsumer<Integer, Point2D> onPointDrag;
     private Consumer<Integer> onPointDragEnd;
+    private Consumer<CurvePoint> onPointDelete;
+    private BiConsumer<Integer, Point2D> onSegmentClick;
 
     public FieldDisplay(int canvasWidthPixels, int canvasHeightPixels,
                         double fieldWidthInches,  // This is for the field's HORIZONTAL extent (new Y-axis)
                         double fieldHeightInches, // This is for the field's VERTICAL extent (new X-axis)
-                        String fieldImagePath, Robot robot, double backgroundAlpha, double fieldImageAlphaFromApp) {
+                        String fieldImagePath, Robot robot, double backgroundAlpha,
+                        double fieldImageAlphaFromApp, Label instructionLabel) {
 
         this.fieldWidthInches_HorizontalY = fieldWidthInches;
         this.fieldHeightInches_VerticalX = fieldHeightInches;
         this.robot = robot;
+        this.instructionLabel = instructionLabel;
 
         // Field X (vertical on field) scales with canvas height.
         this.scaleForFieldX_Vertical = (double) canvasHeightPixels / this.fieldHeightInches_VerticalX;
@@ -163,6 +172,30 @@ public class FieldDisplay extends Pane {
 
         canvas.setFocusTraversable(true);
         setupMouseHandlers();
+        setupKeyHandlers();
+    }
+
+    // --- Setter for the segment click callback ---
+    public void setOnSegmentClick(BiConsumer<Integer, Point2D> handler) {
+        this.onSegmentClick = handler;
+    }
+
+    // --- Method to set the delete action callback ---
+    public void setOnPointDeleteAction(Consumer<CurvePoint> handler) {
+        this.onPointDelete = handler;
+    }
+
+    // --- Method to set up keyboard listeners ---
+    private void setupKeyHandlers() {
+        this.canvas.addEventHandler(KeyEvent.KEY_PRESSED, event -> {
+            // Check if DELETE key is pressed, not in path creation mode, and a point is being hovered
+            if ((event.getCode() == KeyCode.DELETE || event.getCode() == KeyCode.BACK_SPACE) && !isPathCreationMode && hoveredPoint != null) {
+                if (onPointDelete != null) {
+                    onPointDelete.accept(hoveredPoint);
+                }
+                event.consume(); // Consume the event so it's not processed further
+            }
+        });
     }
 
     private void setupMouseHandlers() {
@@ -172,6 +205,16 @@ public class FieldDisplay extends Pane {
                 canvas.requestFocus();
                 // System.out.println("FieldDisplay requested focus."); // Optional log
             }
+
+            // Handle clicking on a segment
+            if (!isPathCreationMode && hoveredSegmentIndex != -1 && event.getButton() == MouseButton.PRIMARY) {
+                if (onSegmentClick != null) {
+                    onSegmentClick.accept(hoveredSegmentIndex, new Point2D(event.getX(), event.getY()));
+                }
+                event.consume();
+                return; // Prevent this click from being processed further
+            }
+
             if (isPathCreationMode) {
                 if (event.getButton() == MouseButton.PRIMARY) {
                     if (event.getClickCount() == 2) {
@@ -229,68 +272,141 @@ public class FieldDisplay extends Pane {
         // --- MOUSE MOVED ---
         this.canvas.addEventHandler(MouseEvent.MOUSE_MOVED, this::handleMouseMoved);
 
-//        this.canvas.addEventHandler(MouseEvent.MOUSE_MOVED, event -> {
-//            Point2D fieldCoords = pixelToInches(event.getX(), event.getY()); // Returns (FieldX, FieldY)
-//            coordinateLabel.setText(String.format("X: %.1f, Y: %.1f", fieldCoords.getX(), fieldCoords.getY()));
-//            double labelOffsetX = 15;
-//            double labelOffsetY = 15;
-//            double newX = Math.min(event.getX() + labelOffsetX, canvas.getWidth() - coordinateLabel.prefWidth(-1) - 5);
-//            newX = Math.max(5, newX);
-//            double newY = Math.min(event.getY() + labelOffsetY, canvas.getHeight() - coordinateLabel.prefHeight(-1) - 5);
-//            newY = Math.max(5, newY);
-//            coordinateLabel.setLayoutX(newX);
-//            coordinateLabel.setLayoutY(newY);
-//            coordinateLabel.setVisible(true);
-//        });
-
         // --- MOUSE EXITED ---
         this.canvas.addEventHandler(MouseEvent.MOUSE_EXITED, event -> {
             coordinateLabel.setVisible(false);
+            boolean needsRedraw = false;
             if (hoveredPoint != null) {
                 hoveredPoint = null;
-                canvas.setCursor(Cursor.DEFAULT);
-                drawCurrentState(); // Redraw to remove hover effect
+                needsRedraw = true;
+            }
+            if (hoveredSegmentIndex != -1) {
+                hoveredSegmentIndex = -1;
+                needsRedraw = true;
+            }
+
+            canvas.setCursor(Cursor.DEFAULT);
+            if (instructionLabel != null) {
+                instructionLabel.setText("Hover over the field, a point, or a path segment.");
+            }
+            if (needsRedraw) {
+                drawCurrentState();
             }
         });
-
-//        this.canvas.addEventHandler(MouseEvent.MOUSE_EXITED, event -> {
-//            if (isPathCreationMode) coordinateLabel.setVisible(false);
-//        });
     }
 
     private void handleMouseMoved(MouseEvent event) {
         updateCoordinateLabel(event);
 
-//        // Update coordinate label (from original MOUSE_MOVED handler)
-//        Point2D fieldCoords = pixelToInches(event.getX(), event.getY());
-//        coordinateLabel.setText(String.format("X: %.1f, Y: %.1f", fieldCoords.getX(), fieldCoords.getY()));
-//        double labelOffsetX = 15;
-//        double labelOffsetY = 15;
-//        double newX = Math.min(event.getX() + labelOffsetX, canvas.getWidth() - coordinateLabel.prefWidth(-1) - 5);
-//        newX = Math.max(5, newX);
-//        double newY = Math.min(event.getY() + labelOffsetY, canvas.getHeight() - coordinateLabel.prefHeight(-1) - 5);
-//        newY = Math.max(5, newY);
-//        coordinateLabel.setLayoutX(newX);
-//        coordinateLabel.setLayoutY(newY);
-//        coordinateLabel.setVisible(true);
-
-        // Hover detection logic
         if (isPathCreationMode || draggedPoint != null) {
-            return; // Don't check for hovers while creating path or dragging
+            return;
         }
 
-        CurvePoint previouslyHovered = hoveredPoint;
+        CurvePoint previouslyHoveredPoint = hoveredPoint;
+        int previouslyHoveredSegment = hoveredSegmentIndex;
+
+        // Reset hover states before checking again
+        hoveredPoint = null;
+        hoveredSegmentIndex = -1;
+
+        // First, check for hovering over a point (points have priority)
         hoveredPoint = findNearbyPoint(event.getX(), event.getY());
 
         if (hoveredPoint != null) {
+            // We are hovering a point, so we are not hovering a segment.
             canvas.setCursor(Cursor.MOVE);
+            if (instructionLabel != null) {
+                int pointIndex = currentPathToDraw.indexOf(hoveredPoint) + 1;
+                instructionLabel.setText(String.format("Point %d: Click and drag to move, or press DELETE to remove.", pointIndex));
+            }
         } else {
-            canvas.setCursor(Cursor.DEFAULT);
+            // Not hovering a point, now check for hovering a segment
+            hoveredSegmentIndex = findNearbySegment(event.getX(), event.getY());
+            if (hoveredSegmentIndex != -1) {
+                canvas.setCursor(Cursor.HAND); // Use hand cursor to indicate "clickable"
+                if (instructionLabel != null) {
+                    instructionLabel.setText(String.format("Segment %d-%d: Click to insert a new point here.", hoveredSegmentIndex + 1, hoveredSegmentIndex + 2));
+                }
+            } else {
+                // Not hovering a point or a segment
+                canvas.setCursor(Cursor.DEFAULT);
+                if (instructionLabel != null && (previouslyHoveredPoint != null || previouslyHoveredSegment != -1)) {
+                    instructionLabel.setText("Path editing finished. Select a point to modify parameters.");
+                }
+            }
         }
 
-        if (previouslyHovered != hoveredPoint) {
-            drawCurrentState(); // Redraw only if hover state changes
+        // Redraw only if the hover state has changed for either points or segments
+        if (previouslyHoveredPoint != hoveredPoint || previouslyHoveredSegment != hoveredSegmentIndex) {
+            drawCurrentState();
         }
+    }
+
+//    private void handleMouseMoved(MouseEvent event) {
+//        updateCoordinateLabel(event);
+//
+//        // Hover detection logic
+//        if (isPathCreationMode || draggedPoint != null) {
+//            return; // Don't check for hovers while creating path or dragging
+//        }
+//
+//        CurvePoint previouslyHovered = hoveredPoint;
+//        hoveredPoint = findNearbyPoint(event.getX(), event.getY());
+//
+//        if (hoveredPoint != null) {
+//            canvas.setCursor(Cursor.MOVE);
+//            if (instructionLabel != null) {
+//                int pointIndex = currentPathToDraw.indexOf(hoveredPoint) + 1;
+//                instructionLabel.setText(String.format("Point %d: Click and drag to move, or press DELETE to remove.", pointIndex));
+//            }
+//        } else {
+//            canvas.setCursor(Cursor.DEFAULT);
+//            if (instructionLabel != null && previouslyHovered != null) { // Only update if the state changed
+//                instructionLabel.setText("Path editing finished. Select a point to modify parameters.");
+//            }
+//        }
+//
+//        if (previouslyHovered != hoveredPoint) {
+//            drawCurrentState(); // Redraw only if hover state changes
+//        }
+//    }
+
+
+    // --- Helper method to find a path segment near the mouse ---
+    private int findNearbySegment(double mouseX, double mouseY) {
+        if (currentPathToDraw == null || currentPathToDraw.size() < 2) {
+            return -1; // No segments to check
+        }
+
+        for (int i = 0; i < currentPathToDraw.size() - 1; i++) {
+            CurvePoint p1 = currentPathToDraw.get(i);
+            CurvePoint p2 = currentPathToDraw.get(i + 1);
+
+            Point2D start = new Point2D(fieldYtoCanvasX(p1.y), fieldXtoCanvasY(p1.x));
+            Point2D end = new Point2D(fieldYtoCanvasX(p2.y), fieldXtoCanvasY(p2.x));
+            Point2D mouse = new Point2D(mouseX, mouseY);
+
+            double dist = distanceToSegment(mouse, start, end);
+
+            if (dist <= SEGMENT_GRAB_RADIUS_PIXELS) {
+                return i; // Return the index of the starting point of the segment
+            }
+        }
+        return -1; // No segment found
+    }
+
+    // --- Geometric calculation for distance from a point to a line segment ---
+    private double distanceToSegment(Point2D p, Point2D v, Point2D w) {
+        double dx = w.getX() - v.getX();
+        double dy = w.getY() - v.getY();
+        double l2 = dx * dx + dy * dy;
+
+        if (l2 == 0.0) return p.distance(v);
+
+        double t = ((p.getX() - v.getX()) * (w.getX() - v.getX()) + (p.getY() - v.getY()) * (w.getY() - v.getY())) / l2;
+        t = Math.max(0, Math.min(1, t));
+        Point2D projection = new Point2D(v.getX() + t * (w.getX() - v.getX()), v.getY() + t * (w.getY() - v.getY()));
+        return p.distance(projection);
     }
 
     /**
@@ -322,7 +438,7 @@ public class FieldDisplay extends Pane {
         this.onPointDragEnd = handler;
     }
 
-    // --- NEW: Helper method to find a point near the mouse ---
+    // --- Helper method to find a point near the mouse ---
     private CurvePoint findNearbyPoint(double mouseX, double mouseY) {
         if (currentPathToDraw == null) return null;
         for (CurvePoint point : currentPathToDraw) {
@@ -583,12 +699,24 @@ public class FieldDisplay extends Pane {
             gc.setLineWidth(2);
             if (currentPathToDraw.size() > 1) {
                 for (int i = 0; i < currentPathToDraw.size() - 1; i++) {
+                    // Highlight the hovered segment
+                    if (i == hoveredSegmentIndex) {
+                        gc.setStroke(Color.ORANGE);
+                        gc.setLineWidth(4);
+                    } else {
+                        gc.setStroke(isPathCreationMode ? Color.CYAN : Color.MAGENTA);
+                        gc.setLineWidth(2);
+                    }
+
                     CurvePoint p1 = currentPathToDraw.get(i);
                     CurvePoint p2 = currentPathToDraw.get(i + 1);
                     gc.strokeLine(fieldYtoCanvasX(p1.y), fieldXtoCanvasY(p1.x),
                             fieldYtoCanvasX(p2.y), fieldXtoCanvasY(p2.x));
                 }
             }
+            // Reset stroke for drawing waypoints
+            gc.setStroke(Color.BLACK);
+            gc.setLineWidth(1);
 
             // Draw waypoints with hover/drag effects
             for (CurvePoint p : currentPathToDraw) {

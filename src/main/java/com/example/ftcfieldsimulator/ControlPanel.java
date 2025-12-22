@@ -95,12 +95,17 @@ public class ControlPanel extends VBox {
         sendPathBox.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(sendPathButton, Priority.ALWAYS); // Make the button fill remaining space
 
+        // Create an HBox for the new/delete buttons
+        HBox newDeleteBox = new HBox(5, newPathButton, deletePathButton);
+        HBox.setHgrow(newPathButton, Priority.ALWAYS);
+        HBox.setHgrow(deletePathButton, Priority.ALWAYS);
+
         // Create an HBox for the import/export buttons
         HBox importExportBox = new HBox(5, importCodeButton, exportCodeButton);
         HBox.setHgrow(importCodeButton, Priority.ALWAYS);
         HBox.setHgrow(exportCodeButton, Priority.ALWAYS);
 
-        VBox pathControlsBox = new VBox(sectionSpacing, pathTitle, newPathButton, deletePathButton, importExportBox, sendPathBox);
+        VBox pathControlsBox = new VBox(sectionSpacing, pathTitle, newDeleteBox, importExportBox, sendPathBox);
 
 
         // --- Robot Start Position Section ---

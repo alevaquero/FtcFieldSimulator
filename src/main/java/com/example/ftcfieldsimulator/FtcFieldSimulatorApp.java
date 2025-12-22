@@ -127,17 +127,7 @@ public class FtcFieldSimulatorApp extends Application {
             updateTimeLapsedDisplay();
         });
 
-        this.robot = new Robot(ROBOT_START_FIELD_X, ROBOT_START_FIELD_Y, ROBOT_START_HEADING_DEGREES, ROBOT_IMAGE_PATH);
-        fieldDisplay = new FieldDisplay(FIELD_DISPLAY_WIDTH_PIXELS, FIELD_DISPLAY_HEIGHT_PIXELS, FIELD_WIDTH_INCHES, FIELD_HEIGHT_INCHES, FIELD_IMAGE_PATH, robot, BACKGROUND_ALPHA, FIELD_IMAGE_ALPHA);
-        fieldDisplay.setNamedLinesMap(namedLinesToDraw);
-        fieldDisplay.setRobotTextMessage(null);
-
-        // --- Init UI Panels ---
-        controlPanel = new ControlPanel(controlPanelWidth);
-        keyValueTable = new FieldKeyValueTable(rightPanelWidth);
-        fieldStatusDisplay = new FieldStatusDisplay(); // NEW
         instructionLabel = new Label("Create a new path or select a point to edit its parameters.");
-        // ... (instructionLabel setup remains the same) ...
         instructionLabel.setPadding(new Insets(5));
         instructionLabel.setMaxWidth(Double.MAX_VALUE);
         instructionLabel.setAlignment(Pos.CENTER);
@@ -145,22 +135,30 @@ public class FtcFieldSimulatorApp extends Application {
         instructionPane.setAlignment(Pos.CENTER);
         instructionPane.setStyle("-fx-background-color: #CFD8DC;");
 
+        this.robot = new Robot(ROBOT_START_FIELD_X, ROBOT_START_FIELD_Y, ROBOT_START_HEADING_DEGREES, ROBOT_IMAGE_PATH);
+        fieldDisplay = new FieldDisplay(FIELD_DISPLAY_WIDTH_PIXELS, FIELD_DISPLAY_HEIGHT_PIXELS, FIELD_WIDTH_INCHES, FIELD_HEIGHT_INCHES, FIELD_IMAGE_PATH, robot, BACKGROUND_ALPHA, FIELD_IMAGE_ALPHA, instructionLabel);
+        fieldDisplay.setNamedLinesMap(namedLinesToDraw);
+        fieldDisplay.setRobotTextMessage(null);
 
-        // --- NEW: Assemble the right-side panel ---
+        // --- Init UI Panels ---
+        controlPanel = new ControlPanel(controlPanelWidth);
+        keyValueTable = new FieldKeyValueTable(rightPanelWidth);
+        fieldStatusDisplay = new FieldStatusDisplay();
+
+        // --- Assemble the right-side panel ---
         VBox rightPanel = new VBox();
         // The keyValueTable will grow to fill available vertical space. The status display will be its natural height.
         VBox.setVgrow(keyValueTable, Priority.ALWAYS);
         rightPanel.getChildren().addAll(keyValueTable, fieldStatusDisplay);
 
-
         // --- Assemble the main layout ---
         BorderPane mainLayout = new BorderPane();
         mainLayout.setLeft(controlPanel);
         mainLayout.setCenter(fieldDisplay);
-        mainLayout.setRight(rightPanel); // MODIFIED
+        mainLayout.setRight(rightPanel);
         mainLayout.setBottom(instructionPane);
 
-        double instructionPaneHeight = 30;
+        double instructionPaneHeight = 60;
         Scene scene = new Scene(mainLayout, totalAppWidth, totalAppHeight + instructionPaneHeight);
         scene.addEventFilter(KeyEvent.KEY_PRESSED, this::handleSceneKeyPress);
 
@@ -169,6 +167,7 @@ public class FtcFieldSimulatorApp extends Application {
         setupRecordingControlActions();
         setupParameterFieldListeners();
         setupFieldDisplayMouseHandlers();
+        setupFieldDisplayKeyHandlers();
 
         startUdpPositionListener();
         startUdpPlotListener();
@@ -182,13 +181,47 @@ public class FtcFieldSimulatorApp extends Application {
         updateTimeLapsedDisplay();
     }
 
-    // --- NEW: Add this entire method to the FtcFieldSimulatorApp class ---
+    // --- To set up the delete action ---
+    private void setupFieldDisplayKeyHandlers() {
+        if (fieldDisplay == null) return;
+
+        // Set the action for when the delete key is pressed on a point
+        fieldDisplay.setOnPointDeleteAction(this::handleDeletePoint);
+    }
+
+    // --- To handle the logic of deleting a point ---
+    private void handleDeletePoint(CurvePoint pointToDelete) {
+        if (pointToDelete == null || !currentPath.contains(pointToDelete)) return;
+
+        int deletedIndex = currentPath.indexOf(pointToDelete);
+        currentPath.remove(pointToDelete);
+
+        // If the first point was deleted, the robot's start position must be updated
+        if (deletedIndex == 0 && !currentPath.isEmpty()) {
+            CurvePoint newFirstPoint = currentPath.get(0);
+            robot.setPosition(newFirstPoint.x, newFirstPoint.y);
+            // The robot's heading remains unchanged in this case
+            controlPanel.updateRobotStartFields(newFirstPoint.x, newFirstPoint.y, robot.getHeadingDegrees());
+        }
+
+        // Refresh the UI to reflect the change
+        fieldDisplay.setHighlightedPoint(null); // Clear any highlight
+        fieldDisplay.setPathToDraw(currentPath);
+        updateControlPanelForPathState(); // This will update the ComboBox and other controls
+        updateUIFromRobotState(); // Redraw everything
+
+        instructionLabel.setText("Deleted Point " + (deletedIndex + 1) + ".");
+    }
+
     /**
      * Sets up the mouse interaction handlers for the FieldDisplay canvas.
      * This connects the UI events for dragging points to the application logic.
      */
     private void setupFieldDisplayMouseHandlers() {
         if (fieldDisplay == null) return;
+
+        // --- Handler for clicking on a segment ---
+        fieldDisplay.setOnSegmentClick(this::handleInsertPoint);
 
         // Handler for while the mouse is being dragged
         fieldDisplay.setOnPointDrag((index, newCoords) -> {
@@ -224,6 +257,52 @@ public class FtcFieldSimulatorApp extends Application {
                 controlPanel.updatePointSelectionComboBox(currentPath, point);
             }
         });
+    }
+
+    // --- To handle the logic of inserting a new point ---
+    private void handleInsertPoint(int segmentIndex, Point2D clickCoordsPixels) {
+        if (segmentIndex < 0 || segmentIndex >= currentPath.size() - 1) {
+            return; // Invalid index
+        }
+
+        // Convert click coordinates from pixels to field inches
+        Point2D clickCoordsInches = fieldDisplay.pixelToInches(clickCoordsPixels.getX(), clickCoordsPixels.getY());
+
+        // Get the points that define the segment
+        CurvePoint startPoint = currentPath.get(segmentIndex);
+        CurvePoint endPoint = currentPath.get(segmentIndex + 1);
+
+        // Interpolate the parameters for the new point (simple average)
+        double newMoveSpeed = (startPoint.moveSpeed + endPoint.moveSpeed) / 2.0;
+        double newTurnSpeed = (startPoint.turnSpeed + endPoint.turnSpeed) / 2.0;
+        double newFollowDistance = (startPoint.followDistance + endPoint.followDistance) / 2.0;
+        double newSlowDownTurnRadians = (startPoint.slowDownTurnRadians + endPoint.slowDownTurnRadians) / 2.0;
+        double newSlowDownTurnAmount = (startPoint.slowDownTurnAmount + endPoint.slowDownTurnAmount) / 2.0;
+
+        // Create the new point at the clicked location with interpolated parameters
+        CurvePoint newPoint = new CurvePoint(
+                clickCoordsInches.getX(),
+                clickCoordsInches.getY(),
+                newMoveSpeed,
+                newTurnSpeed,
+                newFollowDistance,
+                newSlowDownTurnRadians,
+                newSlowDownTurnAmount
+        );
+
+        // Insert the new point into the path right after the start of the segment
+        currentPath.add(segmentIndex + 1, newPoint);
+
+        // After modifying the path list, we must explicitly tell the display
+        // to use the new version for its next drawing cycle.
+        fieldDisplay.setPathToDraw(currentPath);
+
+        // Refresh the entire UI
+        fieldDisplay.setHighlightedPoint(newPoint); // Highlight the newly created point
+        updateControlPanelForPathState(); // This will update the ComboBox to include the new point
+        updateUIFromRobotState(); // Redraw everything
+
+        instructionLabel.setText("Inserted new point " + (segmentIndex + 2) + ".");
     }
 
     private void updateUIFromRobotState() {
