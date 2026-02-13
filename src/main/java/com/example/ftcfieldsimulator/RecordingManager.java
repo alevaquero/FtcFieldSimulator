@@ -85,6 +85,8 @@ public class RecordingManager {
         synchronized (stateLock) {
             stopPlaybackInternal();
             recordedSession = newSession != null ? new ArrayList<>(newSession) : new ArrayList<>();
+            // When loading, we also clear the live buffer to avoid confusion
+            liveBuffer.clear();
             playbackIndex = 0;
             if (!recordedSession.isEmpty()) {
                 firstEventTimestamp = recordedSession.get(0).timestamp; // Get timestamp of the first loaded event
@@ -158,6 +160,23 @@ public class RecordingManager {
             firstEventTimestamp = -1; // Will be set by the first call to addEvent
 //            System.out.println("Recording started.");
             System.out.println("Recording started at: " + recordingStartTimeMs);
+        }
+    }
+
+    /**
+     * Clears both the main recorded session and the live buffer,
+     * resetting the manager to its initial state.
+     */
+    public void clearAll() {
+        synchronized (stateLock) {
+            stopPlaybackInternal(); // Ensure any running playback is stopped
+            recordedSession.clear();
+            liveBuffer.clear();
+            playbackIndex = 0;
+            firstEventTimestamp = -1;
+            recordingStartTimeMs = -1;
+            currentState = PlaybackState.IDLE;
+            System.out.println("Recording session and live buffer cleared.");
         }
     }
 

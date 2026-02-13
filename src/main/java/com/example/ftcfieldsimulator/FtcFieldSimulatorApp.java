@@ -1213,6 +1213,18 @@ public class FtcFieldSimulatorApp extends Application {
     private void setupRecordingControlActions() {
         controlPanel.setOnOpenAction(e -> handleOpenRecording());
         controlPanel.setOnSaveAction(e -> handleSaveRecording());
+        controlPanel.setOnClearRecordingAction(e -> {
+            if (recordingManager != null) {
+                recordingManager.clearAll();
+
+                // Update UI to reflect the cleared state
+                controlPanel.setPlaybackControlsDisabled(true);
+                controlPanel.updateTimelineSlider(0, 1); // Reset slider
+                controlPanel.setSaveButtonDisabled(true);
+                updateTimeLapsedDisplay();
+                instructionLabel.setText("Recording and replay buffer cleared.");
+            }
+        });
         controlPanel.setOnRecordAction(() -> {
             RecordingManager.PlaybackState recordingState = recordingManager.getCurrentState();
             if (recordingState == RecordingManager.PlaybackState.RECORDING) {

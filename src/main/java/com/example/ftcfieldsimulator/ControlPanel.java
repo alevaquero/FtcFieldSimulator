@@ -35,7 +35,7 @@ public class ControlPanel extends VBox {
     private Button sendPathButton;
     private Button recordButton, playPauseButton, reverseButton, forwardButton;
     private Button instantReplayButton, returnToLiveButton;
-    private Button openButton, saveButton;
+    private Button openButton, saveButton, clearButton;
     private ImageView recordIcon, stopIcon, playIcon, pauseIcon, reverseIcon, forwardIcon;
     private Slider timelineSlider;
     private Button showPlotButton;
@@ -173,9 +173,11 @@ public class ControlPanel extends VBox {
         recordingTitle.setFont(titleFont);
         openButton = createMaxWidthButton("Open");
         saveButton = createMaxWidthButton("Save");
-        HBox fileButtons = new HBox(10, openButton, saveButton);
+        clearButton = createMaxWidthButton("Clear");
+        HBox fileButtons = new HBox(10, openButton, saveButton, clearButton);
         HBox.setHgrow(openButton, Priority.ALWAYS);
         HBox.setHgrow(saveButton, Priority.ALWAYS);
+        HBox.setHgrow(clearButton, Priority.ALWAYS);
         recordButton = new Button();
         recordButton.setGraphic(recordIcon);
         playPauseButton = new Button();
@@ -342,9 +344,20 @@ public class ControlPanel extends VBox {
         timeLapsedLabel.setText(String.format(Locale.US, "Time: %d.%03d", seconds, millis));
     }
 
+    public void setOnClearRecordingAction(EventHandler<ActionEvent> handler) {
+        if (clearButton != null) {
+            clearButton.setOnAction(handler);
+        }
+    }
     public void setOnOpenAction(EventHandler<ActionEvent> handler) { openButton.setOnAction(handler); }
     public void setOnSaveAction(EventHandler<ActionEvent> handler) { saveButton.setOnAction(handler); }
-    public void setSaveButtonDisabled(boolean isDisabled) { saveButton.setDisable(isDisabled); }
+    public void setSaveButtonDisabled(boolean isDisabled) {
+        saveButton.setDisable(isDisabled);
+        // Also disable the clear button if there's nothing to clear
+        if (clearButton != null) {
+            clearButton.setDisable(isDisabled);
+        }
+    }
 
     public void setOnNewPathAction(EventHandler<ActionEvent> handler) { newPathButton.setOnAction(handler); }
     public void setOnDeletePathAction(EventHandler<ActionEvent> handler) { deletePathButton.setOnAction(handler); }
