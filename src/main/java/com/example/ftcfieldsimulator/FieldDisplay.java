@@ -325,7 +325,20 @@ public class FieldDisplay extends Pane {
             if (hoveredSegmentIndex != -1) {
                 canvas.setCursor(Cursor.HAND); // Use hand cursor to indicate "clickable"
                 if (instructionLabel != null) {
-                    instructionLabel.setText(String.format("Segment %d-%d: Click to insert a new point here.", hoveredSegmentIndex + 1, hoveredSegmentIndex + 2));
+                    // 1. Get the points of the hovered segment
+                    CurvePoint p1 = currentPathToDraw.get(hoveredSegmentIndex);
+                    CurvePoint p2 = currentPathToDraw.get(hoveredSegmentIndex + 1);
+
+                    // 2. Calculate the distance between them in inches
+                    double segmentLength = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+
+                    // 3. Update the instruction label with the new information
+                    instructionLabel.setText(String.format(
+                            "Segment %d-%d (L: %.1f in): Click to insert a new point here.",
+                            hoveredSegmentIndex + 1,
+                            hoveredSegmentIndex + 2,
+                            segmentLength
+                    ));
                 }
             } else {
                 // Not hovering a point or a segment
